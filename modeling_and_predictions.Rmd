@@ -1,0 +1,154 @@
+---
+title: "BST260 Project - Modeling and Prediction"
+author: "Sun M. Kim"
+date: "12/3/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(caret)
+```
+
+
+# Statistical modeling and prediction
+
+## 1. Effect of sea water temperature on fish in the Great Barrier Reef
+In this analysis, we will examine the effects of water temperature on the number of unique fish species observed in the Great Barrier Reef from 1997 to 2011.
+
+First, we can do some basic visualization by plotting the relationship between water temperatures at 2m and 9m with number of unique fish species observed.
+```{r}
+fish_temp <- read_csv("cleaned_data/fish_temp_data.csv")
+
+# water temp at 2.0m
+fish_temp %>% ggplot(aes(avg_water_temp_2.0m_flat_site, num_of_species)) + geom_point()
+
+# water temp at92.0m
+fish_temp %>% ggplot(aes(avg_water_temp_9.0m_slope_site, num_of_species)) + geom_point()
+```
+
+
+
+Now, we can split our data set into train and test sets, using 0.6 to partition our data. Our outcome is the mean coral cover percentage.
+
+```{r}
+train_index <- createDataPartition(y=fish_temp$num_of_species, times=1, p = 0.6, list=FALSE)
+
+train_set <- fish_temp[train_index, ]
+test_set <- fish_temp[-train_index, ]
+```
+
+First, we will fit two models using each temperature at different depths as a single covariate, and then we will use both predictors to create a multiple linear regression model using both water temperatures as our covariates.
+```{r}
+fish_temp_2.0m <- lm(num_of_species ~ avg_water_temp_2.0m_flat_site, data=train_set)
+summary(fish_temp_2.0m)
+
+fish_temp_9.0m <- lm(num_of_species ~ avg_water_temp_9.0m_slope_site, data=train_set)
+summary(fish_temp_9.0m)
+```
+
+Using both temperatures as our covariates
+```{r}
+fish_temp <- lm(num_of_species ~ avg_water_temp_2.0m_flat_site + avg_water_temp_9.0m_slope_site, data=train_set)
+summary(fish_temp)
+```
+
+Interestingly, using both water temperatures does not result in a regression model where the covariates are statistically significant predictors, as seen in the p-values of 0.731 and 0.413. So, we will compare between the two simple linear models to assess which water temperature depth is a better predictor of unique fish species observed in the Great Barrier Reef. Let's make predictions on our test data and assess model performance between the two models using 2.0m temperature vs 9.0m temperature.
+
+```{r}
+pred_2.0m <- predict(fish_temp_2.0m, test_set)
+pred_9.0m <- predict(fish_temp_9.0m, test_set)
+
+postResample(pred = pred_2.0m, obs = test_set$num_of_species)
+postResample(pred = pred_9.0m, obs = test_set$num_of_species)
+```
+
+We can assess this visually to confirm our results.
+```{r}
+# water temp at 2.0m
+test_set %>% 
+    ggplot(aes(avg_water_temp_2.0m_flat_site, num_of_species)) + 
+    geom_point() +
+    geom_abline(intercept=fish_temp_2.0m$coefficients[1], slope=fish_temp_2.0m$coefficients[2], col="red")
+
+# water temp at 9.0m
+test_set %>% 
+    ggplot(aes(avg_water_temp_9.0m_slope_site, num_of_species)) + 
+    geom_point() +
+    geom_abline(intercept=fish_temp_9.0m$coefficients[1], slope=fish_temp_9.0m$coefficients[2], col="blue")
+```
+
+
+They both perform very similarly, and choosing either water temperature as our predictor will yield similar results.
+
+
+## 2. Binary classification on predicting presence of Halophila Ovalis in the Great Barrier Reef from 1999 - 2003.
+
+```{r}
+h_ovalis_data <- read_csv("cleaned_data/h_ovalis_monthly_presence.csv")
+head(h_ovalis_data)
+```
+We will encode the `H_OVALIS` variable (presence of halophila ovalis sea grass) as 0 for Yes and 1 for No. Similarly, we will encode `TIDAL` variable into 1 for intertidal and 0 for subtidal
+
+```{r}
+h_ovalis_data$H_OVALIS <- as.factor(ifelse(h_ovalis_data$H_OVALIS=="Yes", 1, 0))
+h_ovalis_data$TIDAL <- as.factor(ifelse(h_ovalis_data$TIDAL=="intertidal", 1, 0))
+
+head(h_ovalis_data)
+```
+
+We will build a model predicting the presence of halophila ovalis using water temperature at 2.0m, coral cover percentage, tidal zone, and sediment as predictors. We can use multiple types of classification methods including logistic regression, naive Bayes, QDA and random forest. For now, we will limit ourselves to logistic regression and QDA. First, we partition our data set into train and test sets. Since we have a lot more data here than in the linear regression model, we will partition it by 75%-25%.
+```{r}
+hovalis_train_ind <- createDataPartition(y = h_ovalis_data$H_OVALIS, p=0.75, list=FALSE)
+
+train_set <- h_ovalis_data[hovalis_train_ind, ]
+test_set <- h_ovalis_data[-hovalis_train_ind, ]
+```
+
+
+The logistic regression model is as follows:
+```{r}
+glm_fit <- glm(as.factor(H_OVALIS) ~ TIDAL + DEPTH,
+               data=train_set, 
+               family="binomial")
+
+summary(glm_fit)
+```
+
+Fit model to test data:
+```{r}
+p_hat <- predict(glm_fit, newdata = test_set)
+y_hat <- ifelse(p_hat > 0.5, 1, 0)
+
+confusionMatrix(data = as.factor(y_hat), reference = as.factor(test_set$H_OVALIS))
+```
+
+We are not predicting any 1's (i.e. presence of the sea grass). Let's try a QDA model instead, and if our prediction model still fails, then we will try random forest.
+
+```{r}
+library(MASS)
+
+qda_fit <- qda(H_OVALIS ~ TIDAL + monthly_mean_coral_cover_percentage, data = train_set)
+qda_preds <- predict(qda_fit, test_set)
+
+confusionMatrix(data = as.factor(qda_preds$class), reference = as.factor(test_set$H_OVALIS))
+```
+
+
+```{r}
+library(tree)
+
+fit <- tree(H_OVALIS ~ TIDAL + DEPTH + monthly_mean_coral_cover_percentage + monthly_avg_temp_2.0m, data=train_set)  
+summary(fit)
+```
+
+```{r}
+preds <- predict(fit, newdata = test_set)
+
+#mean((preds-test_set$H_OVALIS)^2)
+```
+
