@@ -20,7 +20,21 @@ library(caret)
 ## 1. Effect of sea water temperature on fish in the Great Barrier Reef
 In this analysis, we will examine the effects of water temperature on the number of unique fish species observed in the Great Barrier Reef from 1997 to 2011.
 
-First, we can do some basic visualization by plotting the relationship between water temperatures at 2m and 9m with number of unique fish species observed.
+Originally, we wanted to examine a relationship between water temperature and coral cover. However, we quickly saw that, when visualized, there does not seem to be a linear relation and we did not want to fit a misspecified model.
+
+```{r}
+read_csv("cleaned_data/temperature_and_coral_cover.csv") %>%
+    ggplot(aes(avg_water_temp_2.0m_flat_site, mean_live_coral_cover_percent)) + 
+    geom_point()
+
+
+read_csv("cleaned_data/temperature_and_coral_cover.csv") %>%
+    ggplot(aes(avg_water_temp_9.0m_slope_site, mean_live_coral_cover_percent)) + 
+    geom_point()
+```
+
+
+So, we will examine a relationship between water temperature and the number of unique species observed in the Great Barrier Reef. First, we can do some basic visualization by plotting the relationship between water temperatures at 2m and 9m with number of unique fish species observed.
 ```{r}
 fish_temp <- read_csv("cleaned_data/fish_temp_data.csv")
 
