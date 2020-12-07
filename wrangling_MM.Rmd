@@ -1,0 +1,183 @@
+---
+title: "Wrangling"
+author: "Manasi Mohan"
+output: html_document
+---
+
+```{r, message=FALSE}
+library(readr)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+```
+
+# temp wrangling
+```{r, message=FALSE, warning=FALSE}
+setwd("~/Documents/Harvard/Semester 3/BST260/bst260_final_project/Data")
+temp2 <- read_csv("Moore_2m_Temp_1997_2020.csv")
+temp9 <- read_csv("Moore_9m_Temp_1997_2017.csv")
+
+temp2 <- temp2[,c(2,5)]
+temp9 <- temp9[,c(2,5)]
+
+temp2$date <- mdy(temp2$date)
+temp9$date <- mdy(temp9$date)
+
+temp <- merge(temp2, temp9, by = "date", all = TRUE)
+temp <- temp %>%
+  rename(temp_2m_flat = `Water Temperature @2.0m MORFL1 Reef Flat Site 1_LEVEL2_value_AVG`,
+         temp_9m_slope = `Water Temperature @9.0m MORSL1 Reef Slope Site 1_LEVEL2_value_AVG`)
+rm(temp2, temp9)
+
+temp <- temp[!(is.na(temp$temp_2m_flat) & is.na(temp$temp_9m_slope)), ]
+
+temp <- temp %>%
+  mutate(year = year(date),
+         month = month(date))
+
+temp_agg2 <- aggregate(temp_2m_flat ~ year + month, data = temp, FUN = mean)
+temp_agg9 <- aggregate(temp_9m_slope ~ year + month, data = temp, FUN = mean)
+
+temp_agg2$monthyear <- my(paste(temp_agg2$month, temp_agg2$year, sep = " "))
+temp_agg9$monthyear <- my(paste(temp_agg9$month, temp_agg9$year, sep = " "))
+
+temp_agg <- merge(temp_agg2, temp_agg9, by = "monthyear", all = TRUE)
+temp_agg <- temp_agg[, c('monthyear', 'temp_2m_flat', 'temp_9m_slope')]
+rm(temp_agg2, temp_agg9)
+
+temp_agg <- temp_agg %>%
+  mutate(water_temp = rowMeans(temp_agg[,c('temp_2m_flat', 'temp_9m_slope')], na.rm = TRUE))
+```
+
+# fish census wrangling
+```{r, message=FALSE, warning=FALSE}
+
+fish <- read_delim("~/Desktop/Fish census 1992-2015.csv", "\t", escape_double = FALSE, trim_ws = TRUE)
+
+# select relevant columns
+fish <- fish %>%
+  select(gbifID, class, family, genus, species, verbatimScientificName, decimalLatitude, decimalLongitude, dateIdentified)
+
+# reformat date
+fish$dateIdentified <- ymd(fish$dateIdentified)
+
+# grouping by date, count unique fish species
+fish <- fish %>%
+    arrange(dateIdentified) %>%
+    group_by(dateIdentified) %>%
+    summarise(num_fish=n_distinct(species))
+
+# rename "dateIdentified" to "date"
+fish <- fish %>%
+  rename(date = dateIdentified)
+
+# add year and month columns
+fish <- fish %>%
+  mutate(year = year(date),
+         month = month(date))
+
+# create monthly aggregated set
+fish_agg <- aggregate(num_fish ~ year + month, data = fish, FUN = mean)
+
+# add monthyear column
+fish_agg$monthyear <- my(paste(fish_agg$month, fish_agg$year, sep = " "))
+```
+
+# coral cover wrangling
+```{r, message=FALSE, warning=FALSE}
+setwd("~/Desktop")
+coral <- read_csv("trendgbr-coral-cover-with-ci.csv")
+
+# reformat date
+coral$Date <- format(date_decimal(coral$Date), "%Y-%m-%d")
+coral$Date <- ymd(coral$Date)
+
+# rename date and coral columns
+coral <- coral %>%
+  rename(date = Date,
+         percent_coral_cover = `Mean live coral cover (percent)`)
+
+# add year and month columns
+coral <- coral %>%
+  mutate(year = year(date),
+         month = month(date))
+
+# create monthly aggregated set
+coral_agg <- aggregate(percent_coral_cover ~ year + month, data = coral, FUN = mean)
+
+# add monthyear column
+coral_agg$monthyear <- my(paste(coral_agg$month, coral_agg$year, sep = " "))
+
+# add season column
+coral_agg <- coral_agg %>%
+  mutate(Season = ifelse(month(monthyear) %in% c(10,11,12,1,2,3), "Wet/Hot", "Dry/Cool"))
+```
+
+# seagrass wrangling
+```{r, message=FALSE, warning=FALSE}
+setwd("~/Desktop")
+seagrass <- read_csv("GBR_NESP-TWQ-3.2.1-5.4_JCU_Seagrass_1984-2018_Site-surveys.csv")
+
+# convert to boolean
+seagrass$PRESENCE_A <- ifelse(seagrass$PRESENCE_A=="Present", 1, 0)
+seagrass$C_ROTUNDAT <- ifelse(seagrass$C_ROTUNDAT=="Yes", 1, 0)
+seagrass$C_SERRULAT <- ifelse(seagrass$C_SERRULAT=="Yes", 1, 0)
+seagrass$E_ACOROIDE <- ifelse(seagrass$E_ACOROIDE=="Yes", 1, 0)
+seagrass$H_CAPRICOR <- ifelse(seagrass$H_CAPRICOR=="Yes", 1, 0)
+seagrass$H_DECIPIEN <- ifelse(seagrass$H_DECIPIEN=="Yes", 1, 0)
+seagrass$H_OVALIS <- ifelse(seagrass$H_OVALIS=="Yes", 1, 0)
+seagrass$H_SPINULOS <- ifelse(seagrass$H_SPINULOS=="Yes", 1, 0)
+seagrass$H_TRICOSTA <- ifelse(seagrass$H_TRICOSTA=="Yes", 1, 0)
+seagrass$H_UNINERVI <- ifelse(seagrass$H_UNINERVI=="Yes", 1, 0)
+seagrass$S_ISOETIFO <- ifelse(seagrass$S_ISOETIFO=="Yes", 1, 0)
+seagrass$T_CILIATUM <- ifelse(seagrass$T_CILIATUM=="Yes", 1, 0)
+seagrass$T_HEMPRICH <- ifelse(seagrass$T_HEMPRICH=="Yes", 1, 0)
+seagrass$Z_CAPRICOR <- ifelse(seagrass$Z_CAPRICOR=="Yes", 1, 0)
+
+# add count variable
+seagrass <- seagrass %>%
+  group_by(FID) %>%
+  mutate(num_seagrass = sum(C_ROTUNDAT, C_SERRULAT, E_ACOROIDE, H_CAPRICOR, H_DECIPIEN,
+                            H_OVALIS, H_SPINULOS, H_TRICOSTA, H_UNINERVI, S_ISOETIFO,
+                            T_CILIATUM, T_HEMPRICH, Z_CAPRICOR))
+
+unique(seagrass$num_seagrass)
+
+# add monthyear column
+seagrass$monthyear <- my(paste(seagrass$MONTH, seagrass$YEAR, sep = " "))
+
+# create monthly aggregated set
+seagrass_agg <- aggregate(num_seagrass ~ YEAR + MONTH, data = seagrass, FUN = mean)
+
+# add monthyear column
+seagrass_agg$monthyear <- my(paste(seagrass_agg$MONTH, seagrass_agg$YEAR, sep = " "))
+```
+
+Create composite feature set
+```{r}
+features_agg <- left_join(coral_agg[, c('monthyear', 'Season', 'percent_coral_cover')], fish_agg[, c('monthyear', 'num_fish')], by = "monthyear")
+features_agg <- left_join(features_agg, seagrass_agg[, c('num_seagrass', 'monthyear')], by = "monthyear")
+features_agg <- left_join(features_agg, temp_agg[, c('monthyear', 'water_temp')], by="monthyear")
+
+features_agg <- features_agg %>%
+  group_by(year(monthyear)) %>%
+  mutate(annual_water_temp = mean(water_temp))
+
+features_agg <- features_agg %>%
+  group_by(year(monthyear), Season) %>%
+  mutate(seasonal_water_temp = mean(water_temp, na.rm = TRUE))
+
+features_agg <- features_agg %>%
+  rename(year = 'year(monthyear)')
+
+features_agg <- features_agg %>%
+  select(monthyear, Season, year, percent_coral_cover, num_fish, num_seagrass, water_temp, seasonal_water_temp, annual_water_temp) %>%
+  arrange(monthyear)
+```
+
+# save dataset
+```{r}
+setwd("~/Documents/Harvard/Semester 3/BST260/bst260_final_project/Data")
+write_csv(features_agg, "data_monthly_MM.csv")
+```
+
