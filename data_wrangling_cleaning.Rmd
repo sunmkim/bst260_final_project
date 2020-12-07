@@ -1,0 +1,191 @@
+---
+title: "BST260 Project - Data Wrangling"
+author: "Sun M. Kim"
+date: "12/03/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(lubridate)
+```
+
+# Data Wrangling
+
+First, we will import the raw data, clean them, and merge them according to our analysis needs. Then, we will take the monthly average to incorporate other data.
+
+## Moore reef data from AIMS 
+
+```{r}
+# function to clean and wrangle AIMS Moore Reef data to deal with column names and column placement
+clean_MooreReef_data <- function(df) {
+    df[,2:ncol(df)] <- df[,1:ncol(df)]
+    df[,1] <- rownames(df)
+    df <- df %>% select(date, colnames(df)[ncol(df)])
+    return(df)
+}
+```
+
+```{r}
+moore_reef_water_temp_2.0m <- read.csv("raw_data/temp/AIMS_MooreReef_WaterTemperature_22Oct1997to16Feb2020_2.0m.csv", skip=108, sep= ",", row.names = NULL)
+moore_reef_water_temp_9.0m <- read.csv("raw_data/temp/AIMS_MooreReef_WaterTemperature_22Oct1997to17Dec2017_9.0m.csv", skip=94, sep= ",", row.names = NULL)
+
+#moore_reef_depth_1.9m <- read.csv("data/depth/AIMS_MooreReef_Depth_29Nov2009to21Apr2011_1.9m.csv", skip=49, sep= ",", row.names = NULL)
+#moore_reef_depth_9.2m <- read.csv("data/depth/AIMS_MooreReef_Depth_29Nov2009to24Feb2011_9.2m.csv", skip=49, sep= ",", row.names = NULL)
+
+# run through function defined above to clean and wrangle data
+moore_reef_water_temp_2.0m <- clean_MooreReef_data(moore_reef_water_temp_2.0m)
+moore_reef_water_temp_9.0m <- clean_MooreReef_data(moore_reef_water_temp_9.0m)
+
+#moore_reef_depth_1.9m <- clean_MooreReef_data(moore_reef_depth_1.9m)
+#moore_reef_depth_9.2m <- clean_MooreReef_data(moore_reef_depth_9.2m)
+
+moore_reef_water_temp_2.0m <- moore_reef_water_temp_2.0m %>%
+    filter(Water.Temperature..2.0m.MORFL1.Reef.Flat.Site.1_LEVEL2_value_AVG != "Not available")
+
+moore_reef_water_temp_9.0m <- moore_reef_water_temp_9.0m %>%
+    filter(Water.Temperature..9.0m.MORSL1.Reef.Slope.Site.1_LEVEL2_value_AVG != "Not available")
+```
+
+```{r}
+# merge AIMS Moore reef data
+aims_temp_data <- Reduce(function(x,y) merge(x,y, by="date"), list(moore_reef_water_temp_2.0m,
+                                                              moore_reef_water_temp_9.0m))
+                                                              #moore_reef_depth_1.9m,
+                                                              #moore_reef_depth_9.2m))
+
+# convert water temp data from string to numeric type
+aims_temp_data$Water.Temperature..2.0m.MORFL1.Reef.Flat.Site.1_LEVEL2_value_AVG <- 
+    as.numeric(as.character(aims_temp_data$Water.Temperature..2.0m.MORFL1.Reef.Flat.Site.1_LEVEL2_value_AVG))
+
+aims_temp_data$Water.Temperature..9.0m.MORSL1.Reef.Slope.Site.1_LEVEL2_value_AVG <- 
+    as.numeric(as.character(aims_temp_data$Water.Temperature..9.0m.MORSL1.Reef.Slope.Site.1_LEVEL2_value_AVG))
+
+# convert to date column into date type
+aims_temp_data$date <- as.Date(aims_temp_data$date)
+
+colnames(aims_temp_data) <- c("date", "avg_water_temp_2.0m_flat_site", "avg_water_temp_9.0m_slope_site")
+
+
+# write combined AIMS Moore reef data
+write.csv(aims_temp_data, "cleaned_data/aims_temperatures.csv", row.names = FALSE)
+```
+
+
+## Coral cover data
+```{r}
+# convert date-decimal in coral cover to YYYY-MM-DD format
+coral_cover <- read.csv("raw_data/trendgbr-coral-cover-with-ci.csv")
+coral_cover$Date <- as.Date(format(date_decimal(coral_cover$Date), "%Y-%m-%d"))
+
+# rename "Date" to "date"
+names(coral_cover)[names(coral_cover) == "Date"] <- "date"
+colnames(coral_cover) <- c("date", "mean_live_coral_cover_percent", "lower_conf_int", "upper_conf_int", "conf_int_span")
+```
+
+```{r}
+coral_cover_temp <- merge(x=aims_temp_data, y=coral_cover, by="date")
+
+write.csv(coral_cover_temp, "cleaned_data/temperature_and_coral_cover.csv", row.names = FALSE)
+```
+
+
+## Fish census data
+```{r}
+fish_census <- read.csv("raw_data/Fish census 1992-2015.csv", sep="\t", header=T)
+
+fish_census <- fish_census %>% select(gbifID, class, family, genus, species, verbatimScientificName, decimalLatitude, decimalLongitude, dateIdentified)
+fish_census$dateIdentified <- ymd_hms(fish_census$dateIdentified)
+```
+
+Group fish census by date, then count how many unique fish species were observed on a given date
+```{r}
+fish_species_counts <- fish_census %>%
+    arrange(dateIdentified) %>%
+    group_by(dateIdentified) %>%
+    summarise(num_of_species=n_distinct(species))
+
+# rename "dateIdentified" to "date"
+names(fish_species_counts)[names(fish_species_counts) == "dateIdentified"] <- "date"
+
+fish_species_counts$date <- as.Date(fish_species_counts$date)
+```
+
+
+Merge AIMS, coral cover and fish census data by data
+```{r}
+fish_temp <- merge(x=aims_temp_data, y=fish_species_counts, by="date")
+fish_coral_cover <- merge(x=coral_cover, y=fish_species_counts, by="date")
+
+fish_coral_cover_temp <- Reduce(function(x,y) merge(x,y, by="date"), list(aims_temp_data,
+                                                                          coral_cover,
+                                                                          fish_species_counts))
+
+
+#fish_coral_cover_temp <- left_join(x=aims_coral_cover, y=fish_species_counts, by="date")
+
+#fish_and_coral_cover_temp <- fish_and_coral_cover_temp %>% select(-Upper.confidence.interval, -Lower.confidence.interval, -Confidence.interval.span)
+
+write.csv(fish_temp, "cleaned_data/fish_temp_data.csv", row.names = FALSE)
+write.csv(fish_coral_cover, "cleaned_data/coral_cover_fish_data.csv", row.names = FALSE)
+write.csv(fish_coral_cover_temp, "cleaned_data/temp_coral_cover_fish_data.csv", row.names = FALSE)
+```
+
+
+## Sea grass data
+```{r}
+seagrass_data <- read.csv("raw_data/GBR_NESP-TWQ-3.2.1-5.4_JCU_Seagrass_1984-2018_Site-surveys.csv") %>% 
+    select(-SURVEY_MET, -SURVEY_NAM)
+
+seagrass_data$MONTH <- as.integer(factor(seagrass_data$MONTH, levels = month.name))
+
+names(seagrass_data)[names(seagrass_data) == "MONTH"] <- "month"
+names(seagrass_data)[names(seagrass_data) == "YEAR"] <- "year"
+```
+
+
+Create a new dataframe of the monthly average number of unique fish species discovered 
+```{r}
+monthly_avg_fish_species <- fish_species_counts %>%
+    mutate(month = as.integer(format(date, "%m")), year = as.integer(format(date, "%Y"))) %>%
+    group_by(month, year) %>%
+    summarise(monthly_fish_species = mean(num_of_species))
+```
+
+
+Likewise, get average temperature of the month
+```{r}
+aims_monthly_avg_temp <- aims_temp_data %>%
+    mutate(month = as.integer(format(date, "%m")), year = as.integer(format(date, "%Y"))) %>%
+    group_by(month, year) %>%
+    summarise(monthly_avg_temp_2.0m = mean(avg_water_temp_2.0m_flat_site),
+              monthly_avg_temp_9.0m = mean(avg_water_temp_9.0m_slope_site))
+```
+
+And average monthly coral cover percentage
+```{r}
+monthly_coral_cover <- coral_cover %>%
+    mutate(month = as.integer(format(date, "%m")), year = as.integer(format(date, "%Y"))) %>%
+    group_by(month, year) %>%
+    summarise(monthly_mean_coral_cover_percentage = mean(mean_live_coral_cover_percent))
+```
+
+
+
+Merge seagrass data with monthly average temperatures and monthly average fish species discovered
+```{r}
+seagrass_monthly_stats <- Reduce(function(x,y) merge(x,y, by=c("month", "year")), list(seagrass_data,
+                                                                                     aims_monthly_avg_temp,
+                                                                                     monthly_avg_fish_species,
+                                                                                     monthly_coral_cover))
+
+halophila_ovalis_presence <- seagrass_monthly_stats %>%
+    filter(SEDIMENT != "Not recorded") %>%
+    select(month, year, H_OVALIS, SEDIMENT, TIDAL, DEPTH, monthly_avg_temp_2.0m, monthly_avg_temp_9.0m, monthly_mean_coral_cover_percentage, monthly_fish_species)
+
+write.csv(halophila_ovalis_presence, "cleaned_data/h_ovalis_monthly_presence.csv", row.names = FALSE)
+```
