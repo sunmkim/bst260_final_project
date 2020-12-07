@@ -1,0 +1,176 @@
+---
+title: "EDA"
+output: html_document
+---
+
+```{r, message=FALSE}
+library(readr)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+
+data <- read_csv("~/Documents/Harvard/Semester 3/BST260/bst260_final_project/Data/data_monthly_MM.csv")
+```
+
+# Temperature
+```{r}
+temp %>%
+  ggplot(aes(x=date, y=temp_2m_flat)) +
+  geom_line() +
+  scale_x_date(breaks = seq.Date(as.Date('1997-01-01'), as.Date('2012-01-01'), "1 year"), 
+               labels = c('1997', '1998', '1999', '2000', '2001', '2002', '2003', '2004', 
+                          '2005', '2006', '2007', '2008', '2009', '2010', '2011', '2012'),
+               limits = c(as.Date('1997-01-01'), as.Date('2012-01-01'))) +
+  ggtitle("Daily water temp, 2m") +
+  ylim(c(23,30))
+
+temp %>%
+  ggplot(aes(x=date, y=temp_9m_slope)) +
+  geom_line() +
+  scale_x_date(breaks = seq.Date(as.Date('1997-01-01'), as.Date('2012-01-01'), "1 year"), 
+               labels = c('1997', '1998', '1999', '2000', '2001', '2002', '2003', '2004', 
+                          '2005', '2006', '2007', '2008', '2009', '2010', '2011', '2012'),
+               limits = c(as.Date('1997-01-01'), as.Date('2012-01-01'))) +
+  ggtitle("Daily water temp, 9m") +
+  ylim(c(23,30))
+
+data %>%
+  ggplot(aes(x=monthyear, y=water_temp)) +
+  geom_line() +
+  scale_x_date(breaks = seq.Date(as.Date('1997-01-01'), as.Date('2012-01-01'), "1 year"), 
+               labels = c('1997', '1998', '1999', '2000', '2001', '2002', '2003', '2004', 
+                          '2005', '2006', '2007', '2008', '2009', '2010', '2011', '2012'),
+               limits = c(as.Date('1997-01-01'), as.Date('2012-01-01'))) +
+  ggtitle("Average monthly water temperature, Great Barrier Reef") +
+  xlab("Month-Year") +
+  ylab("Avg. temp (Celsius)") +
+  ylim(c(23,30))
+
+data %>%
+  ggplot(aes(x=monthyear, y=annual_water_temp)) +
+  geom_line() +
+  scale_x_date(breaks = seq.Date(as.Date('1997-01-01'), as.Date('2012-01-01'), "1 year"), 
+               labels = c('1997', '1998', '1999', '2000', '2001', '2002', '2003', '2004', 
+                          '2005', '2006', '2007', '2008', '2009', '2010', '2011', '2012'),
+               limits = c(as.Date('1997-01-01'), as.Date('2012-01-01'))) +
+  ggtitle("Average annual water temperature, Great Barrier Reef") +
+  xlab("Year") +
+  ylab("Avg. temp (Celsius)") +
+  ylim(c(23,30))
+```
+
+```{r}
+data %>%
+  ggplot(aes(x=monthyear)) +
+  geom_point(aes(y=seasonal_water_temp, group=Season, color=Season)) +
+  geom_line(aes(y=annual_water_temp)) +
+  scale_x_date(breaks = seq.Date(as.Date('1997-01-01'), as.Date('2012-01-01'), "1 year"), 
+               labels = c('1997', '1998', '1999', '2000', '2001', '2002', '2003', '2004', 
+                          '2005', '2006', '2007', '2008', '2009', '2010', '2011', '2012'),
+               limits = c(as.Date('1997-01-01'), as.Date('2012-01-01'))) +
+  ggtitle("Average seasonal water temperature, Great Barrier Reef") +
+  xlab("Month-Year") +
+  ylab("Avg. temp (Celsius)") +
+  ylim(c(23,30))
+
+data %>%
+  ggplot(aes(x=year)) +
+  geom_point(aes(y=seasonal_water_temp, group=Season, color=Season)) +
+  geom_line(aes(y=annual_water_temp)) +
+  scale_x_continuous(breaks = seq(1997, 2012, 1), 
+                     labels = seq(1997, 2012, 1),
+                     limits = c(1997, 2012)) +
+  ggtitle("Average seasonal water temperature, Great Barrier Reef") +
+  xlab("Year") +
+  ylab("Avg. temp (Celsius)") +
+  ylim(c(23,30))
+```
+
+
+# Coral
+```{r}
+coral %>%
+  ggplot(aes(x=date, y=percent_coral_cover)) +
+  geom_line() +
+  scale_x_date(breaks = seq.Date(as.Date('1985-07-01'), as.Date('2012-07-01'), "2 years"), 
+               labels = c('1985', '1987', '1989', '1991', '1993', '1995', '1997', '1999',
+                          '2001', '2003', '2005', '2007', '2009', '2011'),
+               limits = c(as.Date('1985-07-01'), as.Date('2012-07-01'))) +
+  ggtitle("Hard coral cover, Great Barrier Reef") +
+  xlab("Month-Year") +
+  ylab("Percent coverage")
+
+data %>%
+  ggplot(aes(x=monthyear, y=percent_coral_cover)) +
+  geom_line() +
+  scale_x_date(breaks = seq.Date(as.Date('1985-07-01'), as.Date('2012-07-01'), "2 years"), 
+               labels = c('1985', '1987', '1989', '1991', '1993', '1995', '1997', '1999',
+                          '2001', '2003', '2005', '2007', '2009', '2011'),
+               limits = c(as.Date('1985-07-01'), as.Date('2012-07-01'))) +
+  ggtitle("Hard coral cover, Great Barrier Reef") +
+  xlab("Month-Year") +
+  ylab("Percent coverage")
+```
+
+# Seagrass
+```{r}
+seagrass %>%
+  ggplot(aes(x=monthyear)) +
+  geom_point(aes(y=num_seagrass)) +
+#  geom_line(aes(y=num_seagrass)) +
+#  scale_x_date(breaks = seq.Date(as.Date('1997-01-01'), as.Date('2012-01-01'), "1 year"), 
+#               labels = c('1997', '1998', '1999', '2000', '2001', '2002', '2003', '2004', 
+#                          '2005', '2006', '2007', '2008', '2009', '2010', '2011', '2012'),
+#               limits = c(as.Date('1997-01-01'), as.Date('2012-01-01'))) +
+  ggtitle("Average monthly seagrass species, Great Barrier Reef") +
+  xlab("Month-Year") +
+  ylab("Avg. number of species spotted")
+
+data %>%
+  ggplot(aes(x=monthyear)) +
+  geom_point(aes(y=num_seagrass)) +
+  geom_line(aes(y=num_seagrass)) +
+#  scale_x_date(breaks = seq.Date(as.Date('1997-01-01'), as.Date('2012-01-01'), "1 year"), 
+#               labels = c('1997', '1998', '1999', '2000', '2001', '2002', '2003', '2004', 
+#                          '2005', '2006', '2007', '2008', '2009', '2010', '2011', '2012'),
+#               limits = c(as.Date('1997-01-01'), as.Date('2012-01-01'))) +
+  ggtitle("Average monthly seagrass species, Great Barrier Reef") +
+  xlab("Month-Year") +
+  ylab("Avg. number of species spotted")
+```
+
+# Fish
+```{r}
+data %>%
+  ggplot(aes(x=monthyear)) +
+  geom_line(aes(y=num_fish)) +
+#  scale_x_date(breaks = seq.Date(as.Date('1997-01-01'), as.Date('2012-01-01'), "1 year"), 
+#               labels = c('1997', '1998', '1999', '2000', '2001', '2002', '2003', '2004', 
+#                          '2005', '2006', '2007', '2008', '2009', '2010', '2011', '2012'),
+#               limits = c(as.Date('1997-01-01'), as.Date('2012-01-01'))) +
+  ggtitle("Average monthly fish species, Great Barrier Reef") +
+  xlab("Month-Year") +
+  ylab("Avg. number of species spotted")
+```
+```{r}
+data %>%
+  ggplot(aes(x=water_temp, y=num_seagrass)) +
+  geom_point()
+```
+
+# Dual plots
+```{r}
+#data %>%
+#  ggplot(aes(x=monthyear)) +
+#  geom_point(aes(y=seasonal_water_temp, group=Season, color=Season)) +
+#  geom_line(aes(y=percent_coral_cover)) +
+#  scale_x_date(breaks = seq.Date(as.Date('1997-01-01'), as.Date('2012-01-01'), "1 year"), 
+#               labels = c('1997', '1998', '1999', '2000', '2001', '2002', '2003', '2004', 
+#                          '2005', '2006', '2007', '2008', '2009', '2010', '2011', '2012'),
+#               limits = c(as.Date('1997-01-01'), as.Date('2012-01-01'))) +
+#  scale_y_continuous(name = "Avg. water temp (Celsius)",
+#                     sec.axis = sec_axis(~., name="Percent coral coverage")) +
+#  ggtitle("Average seasonal water temperature, Great Barrier Reef") +
+#  xlab("Month-Year")
+```
+
