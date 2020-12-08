@@ -18,6 +18,7 @@ library(caret)
 # Statistical modeling and prediction
 
 ## 1. Effect of sea water temperature on fish in the Great Barrier Reef
+### 1.1 Data exploratory analysis and visualization
 In this analysis, we will examine the effects of water temperature on the number of unique fish species observed in the Great Barrier Reef from 1997 to 2011.
 
 Originally, we wanted to examine a relationship between water temperature and coral cover. However, we quickly saw that, when visualized, there does not seem to be a linear relation and we did not want to fit a misspecified model.
@@ -46,6 +47,7 @@ fish_temp %>% ggplot(aes(avg_water_temp_9.0m_slope_site, num_of_species)) + geom
 ```
 
 
+### 1.2 Linear regression
 
 Now, we can split our data set into train and test sets, using 0.6 to partition our data. Our outcome is the mean coral cover percentage.
 
@@ -99,70 +101,146 @@ test_set %>%
 
 They both perform very similarly, and choosing either water temperature as our predictor will yield similar results.
 
+\
+\
 
 ## 2. Binary classification on predicting presence of Halophila Ovalis in the Great Barrier Reef from 1999 - 2003.
-
+## 2.1 Data exploratory analysis and visualization
 ```{r}
 h_ovalis_data <- read_csv("cleaned_data/h_ovalis_monthly_presence.csv")
 head(h_ovalis_data)
 ```
-We will encode the `H_OVALIS` variable (presence of halophila ovalis sea grass) as 0 for Yes and 1 for No. Similarly, we will encode `TIDAL` variable into 1 for intertidal and 0 for subtidal
+We will encode the `H_OVALIS` variable (presence of halophila ovalis sea grass) as 0 for Yes and 1 for No. Similarly, we will encode `SEDIMENT` variable into into integers where 0=Mud, 1=Sand, 2=Reef, 3=Rock, 4=Rubble, 5=Shell, and 6=Gravel
 
 ```{r}
 h_ovalis_data$H_OVALIS <- as.factor(ifelse(h_ovalis_data$H_OVALIS=="Yes", 1, 0))
 h_ovalis_data$TIDAL <- as.factor(ifelse(h_ovalis_data$TIDAL=="intertidal", 1, 0))
 
+h_ovalis_data$MUD <- ifelse(h_ovalis_data$SEDIMENT == "Mud", 1, 0)
+h_ovalis_data$MUD <- as.factor(h_ovalis_data$MUD)
+
+h_ovalis_data$SEDIMENT <- factor(h_ovalis_data$SEDIMENT, 
+                                 levels = c("Mud", "Sand", "Reef", "Rock", "Rubble", "Shell", "Gravel"),
+                                 labels = c(0, 1, 2, 3, 4, 5, 6),
+                                 ordered = FALSE)
+
 head(h_ovalis_data)
 ```
 
-We will build a model predicting the presence of halophila ovalis using water temperature at 2.0m, coral cover percentage, tidal zone, and sediment as predictors. We can use multiple types of classification methods including logistic regression, naive Bayes, QDA and random forest. For now, we will limit ourselves to logistic regression and QDA. First, we partition our data set into train and test sets. Since we have a lot more data here than in the linear regression model, we will partition it by 75%-25%.
-```{r}
-hovalis_train_ind <- createDataPartition(y = h_ovalis_data$H_OVALIS, p=0.75, list=FALSE)
+We suspect that there's some relationship between halophila ovalis presence and the depth and sediment in which they were discovered. Let's visualize our data to confirm.
 
-train_set <- h_ovalis_data[hovalis_train_ind, ]
-test_set <- h_ovalis_data[-hovalis_train_ind, ]
+```{r}
+h_ovalis_data %>% 
+    ggplot(aes(H_OVALIS, DEPTH)) + geom_point(pch = 21, fill="black")
+
+h_ovalis_data %>% 
+    ggplot(aes(SEDIMENT, fill=H_OVALIS)) + geom_bar(width=.5, position = "dodge")
+```
+
+
+We will build a model predicting the presence of halophila ovalis using depth and sediment as predictors. We can use multiple types of classification methods including logistic regression, naive Bayes, QDA and random forest, but for the project, we will limit ourselves to logistic regression, and random forest to compare and contrast the results between the two models.
+
+## 2.2 Logistic regression
+
+First, we partition our data set into train and test sets. Since we have a lot more data here than in the linear regression model, we will partition it by 75%-25%.
+
+```{r}
+h_ovalis_subset <- h_ovalis_data %>% dplyr::select(H_OVALIS, DEPTH, SEDIMENT, MUD)
+hovalis_train_ind <- createDataPartition(y = h_ovalis_subset$H_OVALIS, p=0.75, list=FALSE)
+
+train_set <- h_ovalis_subset[hovalis_train_ind, ]
+test_set <- h_ovalis_subset[-hovalis_train_ind, ]
 ```
 
 
 The logistic regression model is as follows:
 ```{r}
-glm_fit <- glm(as.factor(H_OVALIS) ~ TIDAL + DEPTH,
+glm_fit <- glm(H_OVALIS ~ DEPTH + SEDIMENT,
                data=train_set, 
                family="binomial")
 
 summary(glm_fit)
 ```
 
+
 Fit model to test data:
 ```{r}
-p_hat <- predict(glm_fit, newdata = test_set)
-y_hat <- ifelse(p_hat > 0.5, 1, 0)
+p_hat <- predict(glm_fit, newdata = test_set, type = "response")
 
-confusionMatrix(data = as.factor(y_hat), reference = as.factor(test_set$H_OVALIS))
+plot(p_hat)
 ```
 
-We are not predicting any 1's (i.e. presence of the sea grass). Let's try a QDA model instead, and if our prediction model still fails, then we will try random forest.
+If we visualize our fitted p-values, we see that none of them are greater than 0.50. However, there seems to two main clusters of $\hat{p}$ values that is partitioned at about 0.175. So, we will use this as our classification threshold.
 
 ```{r}
-library(MASS)
+#p_hat <- predict(glm_fit, newdata = test_set, type = "response"
+y_hat <- ifelse(p_hat > 0.2, 1, 0)
 
-qda_fit <- qda(H_OVALIS ~ TIDAL + monthly_mean_coral_cover_percentage, data = train_set)
-qda_preds <- predict(qda_fit, test_set)
+confusionMatrix(data = as.factor(y_hat), reference = test_set$H_OVALIS )
+```
 
-confusionMatrix(data = as.factor(qda_preds$class), reference = as.factor(test_set$H_OVALIS))
+We see that our model is only accurate for about half of the predictions, which is not good. Specifically, it does not have good sensitivity. So, let's try a random forest to see if that performs better.
+
+
+
+## 2.3 Random forest
+
+Now we will try our third and final model: random forest. To select `mtry`, we will simply use 2, since we only have 2 predictors, and a node size of 600.
+
+```{r}
+library(randomForest)
+
+rf_fit <- randomForest(H_OVALIS ~ DEPTH + SEDIMENT, 
+                       data=train_set,
+                       mtry = 2)
+rf_fit
+```
+
+```{r}
+rf_pred <- predict(rf_fit, newdata = test_set, type = "response")
+confusionMatrix(table(pred = rf_pred, reference = test_set$H_OVALIS))
+```
+
+We have near 74% accuracy, which is much better than the logistic regression model. However, we see that the specificity is rather low at about 28.3%. Hence, we have a lot of false positives. It seems that our model has few false negatives but many false positives.
+
+```{r}
+get_accuracy <- function(fit, model_type) {
+    pred <- predict(fit, newdata = test_set, type = "response")
+    
+    if (model_type == "rf") {
+        confusionMatrix(table(pred = pred, reference = test_set$H_OVALIS))$overall[1]
+    }
+    else if (model_type == "logistic") {
+        y_hat <- ifelse(pred > 0.175, 1, 0)
+        confusionMatrix(data = as.factor(y_hat), reference = as.factor(test_set$H_OVALIS) )$overall[1]
+    }
+}
+
+get_accuracy(glm_fit, "logistic")
+get_accuracy(rf_fit, "rf")
 ```
 
 
 ```{r}
-library(tree)
 
-fit <- tree(H_OVALIS ~ TIDAL + DEPTH + monthly_mean_coral_cover_percentage + monthly_avg_temp_2.0m, data=train_set)  
-summary(fit)
+ggplot(test_set, aes(x=DEPTH, fill = H_OVALIS)) +
+  geom_density(position = position_fill(), size = 0)
+
+
+ggplot(test_set, aes(x=DEPTH,  fill = rf_pred)) +
+  geom_density(position = position_fill(), size = 0)
 ```
+
+
 
 ```{r}
-preds <- predict(fit, newdata = test_set)
+variable_importance <- importance(rf_fit)
 
-#mean((preds-test_set$H_OVALIS)^2)
+tmp <- tibble(feature = rownames(variable_importance),
+                  Gini = variable_importance[,1]) %>%
+                  arrange(desc(Gini))
+
+tmp
 ```
 
+We see that DEPTH was a much better predictor of the presence of halophila ovalis than the sediment type in which they were discovered.
