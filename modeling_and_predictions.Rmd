@@ -1,7 +1,7 @@
 ---
 title: "BST260 Project - Modeling and Prediction"
 author: "Sun M. Kim"
-date: "12/3/2020"
+date: "12/09/2020"
 output:
   html_document:
     df_print: paged
@@ -16,6 +16,7 @@ library(tidyverse)
 library(caret)
 library(nnet)
 library(plotly)
+library(randomForest)
 ```
 
 
@@ -162,8 +163,6 @@ test_set <- seagrass[-seagrass_train_ind, ]
 
 
 ```{r}
-library(randomForest)
-
 rf_fit <- randomForest(SPECIES ~ LATITUDE + LONGITUDE + DEPTH + SEDIMENT + TIDAL, 
                        data=train_set,
                        mtry = 2)
