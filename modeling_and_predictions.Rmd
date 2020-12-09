@@ -14,6 +14,8 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r, message=FALSE, warning=FALSE}
 library(tidyverse)
 library(caret)
+library(nnet)
+library(plotly)
 ```
 
 
@@ -25,13 +27,21 @@ In this analysis, we will examine the effects of water temperature on the number
 
 Originally, we wanted to examine a relationship between water temperature and coral cover. However, we quickly saw that, when visualized, there does not seem to be a linear relation and we did not want to fit a misspecified model.
 
+
+Merge between temperature and coral cover data sets
 ```{r}
-read_csv("cleaned_data/temperature_and_coral_cover.csv") %>%
+temp <- read_csv("cleaned_data/aims_temperatures.csv")
+coral_cover <- read_csv("cleaned_data/coral_cover.csv")
+
+temp_coral_cover <- merge(x=temp, y=coral_cover, by="date")
+```
+
+```{r}
+temp_coral_cover %>%
     ggplot(aes(avg_water_temp_2.0m_flat_site, mean_live_coral_cover_percent)) + 
     geom_point()
 
-
-read_csv("cleaned_data/temperature_and_coral_cover.csv") %>%
+temp_coral_cover %>%
     ggplot(aes(avg_water_temp_9.0m_slope_site, mean_live_coral_cover_percent)) + 
     geom_point()
 ```
@@ -39,7 +49,8 @@ read_csv("cleaned_data/temperature_and_coral_cover.csv") %>%
 
 So, we will examine a relationship between water temperature and the number of unique species observed in the Great Barrier Reef. First, we can do some basic visualization by plotting the relationship between water temperatures at 2m and 9m with number of unique fish species observed.
 ```{r}
-fish_temp <- read_csv("cleaned_data/fish_temp_data.csv")
+fish <- read_csv("cleaned_data/fish_species_counts.csv")
+fish_temp <- merge(x=temp, y=fish, by="date")
 
 # water temp at 2.0m
 fish_temp %>% ggplot(aes(avg_water_temp_2.0m_flat_site, num_of_species)) + geom_point()
@@ -48,6 +59,8 @@ fish_temp %>% ggplot(aes(avg_water_temp_2.0m_flat_site, num_of_species)) + geom_
 fish_temp %>% ggplot(aes(avg_water_temp_9.0m_slope_site, num_of_species)) + geom_point()
 ```
 
+
+There seems to be a bit of negative linear relationship going on, so we will fit a linear model examining the number of unique species discovered in the Great Barrier Reef in relation to rising temperature.
 
 ### 1.2 Linear regression
 
@@ -108,141 +121,178 @@ They both perform very similarly, and choosing either water temperature as our p
 
 ## 2. Binary classification on predicting presence of Halophila Ovalis in the Great Barrier Reef from 1999 - 2003.
 ## 2.1 Data exploratory analysis and visualization
-```{r}
-h_ovalis_data <- read_csv("cleaned_data/h_ovalis_monthly_presence.csv")
-head(h_ovalis_data)
-```
-We will encode the `H_OVALIS` variable (presence of halophila ovalis sea grass) as 0 for Yes and 1 for No. Similarly, we will encode `SEDIMENT` variable into into integers where 0=Mud, 1=Sand, 2=Reef, 3=Rock, 4=Rubble, 5=Shell, and 6=Gravel
 
-```{r}
-h_ovalis_data$H_OVALIS <- as.factor(ifelse(h_ovalis_data$H_OVALIS=="Yes", 1, 0))
-h_ovalis_data$TIDAL <- as.factor(ifelse(h_ovalis_data$TIDAL=="intertidal", 1, 0))
+```{r, warning=FALSE}
+seagrass <- read.csv("cleaned_data/seagrass_classification_data.csv", as.is =TRUE)
 
-h_ovalis_data$MUD <- ifelse(h_ovalis_data$SEDIMENT == "Mud", 1, 0)
-h_ovalis_data$MUD <- as.factor(h_ovalis_data$MUD)
+seagrass$SPECIES <- as.factor(seagrass$SPECIES)
+seagrass$SEDIMENT <- as.factor(seagrass$SEDIMENT)
+seagrass$TIDAL <- as.factor(seagrass$TIDAL)
 
-h_ovalis_data$SEDIMENT <- factor(h_ovalis_data$SEDIMENT, 
-                                 levels = c("Mud", "Sand", "Reef", "Rock", "Rubble", "Shell", "Gravel"),
-                                 labels = c(0, 1, 2, 3, 4, 5, 6),
-                                 ordered = FALSE)
+head(seagrass)
 
-head(h_ovalis_data)
+summary(seagrass)
 ```
 
-We suspect that there's some relationship between halophila ovalis presence and the depth and sediment in which they were discovered. Let's visualize our data to confirm.
-
+Data visualization
 ```{r}
-h_ovalis_data %>% 
-    ggplot(aes(H_OVALIS, DEPTH)) + geom_point(pch = 21, fill="black")
+seagrass %>%  ggplot() + geom_point(aes(x=LATITUDE, y=LONGITUDE, color=SPECIES))
 
-h_ovalis_data %>% 
-    ggplot(aes(SEDIMENT, fill=H_OVALIS)) + geom_bar(width=.5, position = "dodge")
+seagrass %>% 
+    ggplot(aes(SEDIMENT, fill=SPECIES)) + geom_bar(width=.5, position = "dodge")
+
+plot_ly(seagrass, x=~LATITUDE, y=~LONGITUDE, z=~-DEPTH, color=~SPECIES, type="scatter3d", mode="markers")
 ```
 
 
-We will build a model predicting the presence of halophila ovalis using depth and sediment as predictors. We can use multiple types of classification methods including logistic regression, naive Bayes, QDA and random forest, but for the project, we will limit ourselves to logistic regression, and random forest to compare and contrast the results between the two models.
+\
+\
 
-## 2.2 Logistic regression
 
+## 2.2 Random forest
 First, we partition our data set into train and test sets. Since we have a lot more data here than in the linear regression model, we will partition it by 75%-25%.
 
 ```{r}
-h_ovalis_subset <- h_ovalis_data %>% dplyr::select(H_OVALIS, DEPTH, SEDIMENT, MUD)
-hovalis_train_ind <- createDataPartition(y = h_ovalis_subset$H_OVALIS, p=0.75, list=FALSE)
+# test-train split
+seagrass_train_ind <- createDataPartition(y = seagrass$SPECIES, p=0.75, list=FALSE)
 
-train_set <- h_ovalis_subset[hovalis_train_ind, ]
-test_set <- h_ovalis_subset[-hovalis_train_ind, ]
+train_set <- seagrass[seagrass_train_ind, ]
+test_set <- seagrass[-seagrass_train_ind, ]
 ```
 
-
-The logistic regression model is as follows:
-```{r}
-glm_fit <- glm(H_OVALIS ~ DEPTH + SEDIMENT,
-               data=train_set, 
-               family="binomial")
-
-summary(glm_fit)
-```
-
-
-Fit model to test data:
-```{r}
-p_hat <- predict(glm_fit, newdata = test_set, type = "response")
-
-plot(p_hat)
-```
-
-If we visualize our fitted p-values, we see that none of them are greater than 0.50. However, there seems to two main clusters of $\hat{p}$ values that is partitioned at about 0.175. So, we will use this as our classification threshold.
-
-```{r}
-#p_hat <- predict(glm_fit, newdata = test_set, type = "response"
-y_hat <- ifelse(p_hat > 0.2, 1, 0)
-
-confusionMatrix(data = as.factor(y_hat), reference = test_set$H_OVALIS )
-```
-
-We see that our model is only accurate for about half of the predictions, which is not good. Specifically, it does not have good sensitivity. So, let's try a random forest to see if that performs better.
-
-
-
-## 2.3 Random forest
-
-Now we will try our third and final model: random forest. To select `mtry`, we will simply use 2, since we only have 2 predictors, and a node size of 600.
 
 ```{r}
 library(randomForest)
 
-rf_fit <- randomForest(H_OVALIS ~ DEPTH + SEDIMENT, 
+rf_fit <- randomForest(SPECIES ~ LATITUDE + LONGITUDE + DEPTH + SEDIMENT + TIDAL, 
                        data=train_set,
                        mtry = 2)
 rf_fit
 ```
 
+
 ```{r}
 rf_pred <- predict(rf_fit, newdata = test_set, type = "response")
-confusionMatrix(table(pred = rf_pred, reference = test_set$H_OVALIS))
+confusionMatrix(table(pred = rf_pred, true = test_set$SPECIES))
 ```
 
-We have near 74% accuracy, which is much better than the logistic regression model. However, we see that the specificity is rather low at about 28.3%. Hence, we have a lot of false positives. It seems that our model has few false negatives but many false positives.
+We see that our classification model works quite well, especially for T_HEMPRICH and Z_CAPRICOR. However, we got quite a low sensitity for S_ISOETIFO. Recall to our data wrangling portion that S_ISOETIFO had only about 100 "Yes" observations. Since we had a small sample size for S_ISOETIFO relative to the other 3 seagrass species, this may have contributed to the low sensitivity.
 
+Visualization
 ```{r}
-get_accuracy <- function(fit, model_type) {
-    pred <- predict(fit, newdata = test_set, type = "response")
-    
-    if (model_type == "rf") {
-        confusionMatrix(table(pred = pred, reference = test_set$H_OVALIS))$overall[1]
-    }
-    else if (model_type == "logistic") {
-        y_hat <- ifelse(pred > 0.175, 1, 0)
-        confusionMatrix(data = as.factor(y_hat), reference = as.factor(test_set$H_OVALIS) )$overall[1]
-    }
-}
+# true values
+plot_ly(test_set, x=~LATITUDE, y=~LONGITUDE, z=~-DEPTH, color=~SPECIES, type="scatter3d", mode="markers")
 
-get_accuracy(glm_fit, "logistic")
-get_accuracy(rf_fit, "rf")
+# predicetd values
+plot_ly(test_set, x=~LATITUDE, y=~LONGITUDE, z=~-DEPTH, color=~rf_pred, type="scatter3d", mode="markers")
 ```
-
-
-```{r}
-
-ggplot(test_set, aes(x=DEPTH, fill = H_OVALIS)) +
-  geom_density(position = position_fill(), size = 0)
-
-
-ggplot(test_set, aes(x=DEPTH,  fill = rf_pred)) +
-  geom_density(position = position_fill(), size = 0)
-```
-
 
 
 ```{r}
 variable_importance <- importance(rf_fit)
-
-tmp <- tibble(feature = rownames(variable_importance),
+tmp <- data_frame(feature = rownames(variable_importance),
                   Gini = variable_importance[,1]) %>%
                   arrange(desc(Gini))
 
 tmp
 ```
 
-We see that DEPTH was a much better predictor of the presence of halophila ovalis than the sediment type in which they were discovered.
+We see that longitude and latitude were very predictive of presence of seagrass followed by depth from sea level. The types of sediment and seabed (intertidal or subtidal seabed) are not very good predictors. Thus, it seems that the location of where the seagrass was discovered matters more than the various ocean floor properties.
+
+
+```{r}
+tmp %>% ggplot(aes(x=reorder(feature, Gini), y=Gini)) + 
+  geom_bar(stat='identity') +
+  coord_flip() + xlab("Feature") +
+  theme(axis.text=element_text(size=8))
+```
+
+\
+\
+
+
+## 2.3 Multinomial logistic regression
+
+We can try a multinomial logistic regression model to see how it compares to our random forest model. 
+
+The logistic regression model is as follows:
+```{r}
+library(nnet)
+
+multinom_fit <- multinom(SPECIES ~ LATITUDE + LONGITUDE + DEPTH + SEDIMENT, data=train_set)
+
+summary(multinom_fit)
+```
+
+Relative risk ratios where reference group is C_SERRULAT
+```{r}
+exp(coef(multinom_fit))
+```
+
+```{r}
+# predicted probabilities
+predicted_prob <- predict(multinom_fit, newdata=test_set, type="probs")
+
+# predicted classes
+predicted_class <- predict(multinom_fit, newdata=test_set, type="class")
+
+confusionMatrix(data = predicted_class, reference = test_set$SPECIES )
+```
+
+
+We see that our multinomial logistic model has about 91% overall accuracy, which performs a bit worse than random forest. However, the model does a very bad job in predicting `S_ISOETIFO`.
+
+The model seems to predict T_HEMPRICH the best with 88.7% sensitivity and 98.8% specificity. The model also does not perform well for sensitivity of C_SERRULAT, with only about 41.7% sensitivity.
+
+```{r}
+density_plot_long_true <- ggplot(test_set, aes(x=LONGITUDE, fill=SPECIES)) + 
+  geom_density(alpha=0.7)
+
+density_plot_long_true
+
+
+density_plot_long_pred <- ggplot(test_set, aes(x=LONGITUDE, fill=predicted_class)) + 
+  geom_density(alpha=0.7)
+
+density_plot_long_pred
+```
+
+
+
+
+```{r}
+density_plot_lat_true <- ggplot(test_set, aes(x=LATITUDE, fill=SPECIES)) + 
+  geom_density(alpha=0.7)
+
+density_plot_lat_true
+
+
+density_plot_lat_pred <- ggplot(test_set, aes(x=LATITUDE, fill=predicted_class)) + 
+  geom_density(alpha=0.7)
+
+density_plot_lat_pred
+```
+
+
+
+```{r}
+density_plot_depth_true <- ggplot(test_set, aes(x=DEPTH, fill=SPECIES)) + 
+  geom_density(alpha=0.7)
+
+density_plot_depth_true
+
+
+density_plot_depth_pred <- ggplot(test_set, aes(x=DEPTH, fill=predicted_class)) + 
+  geom_density(alpha=0.7)
+
+density_plot_depth_pred
+```
+
+
+
+
+
+
+
+So, we see that the overall accuracy for multinomial logistic regression model vs random forest model was 73.5% and 91.7%, respectively.
+

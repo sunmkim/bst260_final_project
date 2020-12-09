@@ -387,8 +387,6 @@ clean_MooreReef_data &lt;- function(df) {
 <pre class="r"><code>moore_reef_water_temp_2.0m &lt;- read.csv(&quot;raw_data/temp/AIMS_MooreReef_WaterTemperature_22Oct1997to16Feb2020_2.0m.csv&quot;, skip=108, sep= &quot;,&quot;, row.names = NULL)
 moore_reef_water_temp_9.0m &lt;- read.csv(&quot;raw_data/temp/AIMS_MooreReef_WaterTemperature_22Oct1997to17Dec2017_9.0m.csv&quot;, skip=94, sep= &quot;,&quot;, row.names = NULL)
 
-#moore_reef_depth_1.9m &lt;- read.csv(&quot;data/depth/AIMS_MooreReef_Depth_29Nov2009to21Apr2011_1.9m.csv&quot;, skip=49, sep= &quot;,&quot;, row.names = NULL)
-#moore_reef_depth_9.2m &lt;- read.csv(&quot;data/depth/AIMS_MooreReef_Depth_29Nov2009to24Feb2011_9.2m.csv&quot;, skip=49, sep= &quot;,&quot;, row.names = NULL)
 
 # run through function defined above to clean and wrangle data
 moore_reef_water_temp_2.0m &lt;- clean_MooreReef_data(moore_reef_water_temp_2.0m)</code></pre>
@@ -397,10 +395,7 @@ moore_reef_water_temp_2.0m &lt;- clean_MooreReef_data(moore_reef_water_temp_2.0m
 <pre class="r"><code>moore_reef_water_temp_9.0m &lt;- clean_MooreReef_data(moore_reef_water_temp_9.0m)</code></pre>
 <pre><code>## Warning in `[&lt;-.data.frame`(`*tmp*`, , 2:ncol(df), value = structure(list(:
 ## provided 6 variables to replace 5 variables</code></pre>
-<pre class="r"><code>#moore_reef_depth_1.9m &lt;- clean_MooreReef_data(moore_reef_depth_1.9m)
-#moore_reef_depth_9.2m &lt;- clean_MooreReef_data(moore_reef_depth_9.2m)
-
-moore_reef_water_temp_2.0m &lt;- moore_reef_water_temp_2.0m %&gt;%
+<pre class="r"><code>moore_reef_water_temp_2.0m &lt;- moore_reef_water_temp_2.0m %&gt;%
     filter(Water.Temperature..2.0m.MORFL1.Reef.Flat.Site.1_LEVEL2_value_AVG != &quot;Not available&quot;)
 
 moore_reef_water_temp_9.0m &lt;- moore_reef_water_temp_9.0m %&gt;%
@@ -408,9 +403,7 @@ moore_reef_water_temp_9.0m &lt;- moore_reef_water_temp_9.0m %&gt;%
 <pre class="r"><code># merge AIMS Moore reef data
 aims_temp_data &lt;- Reduce(function(x,y) merge(x,y, by=&quot;date&quot;), list(moore_reef_water_temp_2.0m,
                                                               moore_reef_water_temp_9.0m))
-                                                              #moore_reef_depth_1.9m,
-                                                              #moore_reef_depth_9.2m))
-
+                                                            
 # convert water temp data from string to numeric type
 aims_temp_data$Water.Temperature..2.0m.MORFL1.Reef.Flat.Site.1_LEVEL2_value_AVG &lt;- 
     as.numeric(as.character(aims_temp_data$Water.Temperature..2.0m.MORFL1.Reef.Flat.Site.1_LEVEL2_value_AVG))
@@ -435,10 +428,8 @@ coral_cover$Date &lt;- as.Date(format(date_decimal(coral_cover$Date), &quot;%Y-%
 
 # rename &quot;Date&quot; to &quot;date&quot;
 names(coral_cover)[names(coral_cover) == &quot;Date&quot;] &lt;- &quot;date&quot;
-colnames(coral_cover) &lt;- c(&quot;date&quot;, &quot;mean_live_coral_cover_percent&quot;, &quot;lower_conf_int&quot;, &quot;upper_conf_int&quot;, &quot;conf_int_span&quot;)</code></pre>
-<pre class="r"><code>coral_cover_temp &lt;- merge(x=aims_temp_data, y=coral_cover, by=&quot;date&quot;)
-
-write.csv(coral_cover_temp, &quot;cleaned_data/temperature_and_coral_cover.csv&quot;, row.names = FALSE)</code></pre>
+colnames(coral_cover) &lt;- c(&quot;date&quot;, &quot;mean_live_coral_cover_percent&quot;, &quot;lower_conf_int&quot;, &quot;upper_conf_int&quot;, &quot;conf_int_span&quot;)
+write.csv(coral_cover, &quot;cleaned_data/coral_cover.csv&quot;, row.names = FALSE)</code></pre>
 </div>
 <div id="fish-census-data" class="section level2">
 <h2>Fish census data</h2>
@@ -455,64 +446,149 @@ fish_census$dateIdentified &lt;- ymd_hms(fish_census$dateIdentified)</code></pre
 <pre class="r"><code># rename &quot;dateIdentified&quot; to &quot;date&quot;
 names(fish_species_counts)[names(fish_species_counts) == &quot;dateIdentified&quot;] &lt;- &quot;date&quot;
 
-fish_species_counts$date &lt;- as.Date(fish_species_counts$date)</code></pre>
-<p>Merge AIMS, coral cover and fish census data by data</p>
-<pre class="r"><code>fish_temp &lt;- merge(x=aims_temp_data, y=fish_species_counts, by=&quot;date&quot;)
-fish_coral_cover &lt;- merge(x=coral_cover, y=fish_species_counts, by=&quot;date&quot;)
+fish_species_counts$date &lt;- as.Date(fish_species_counts$date)
 
-fish_coral_cover_temp &lt;- Reduce(function(x,y) merge(x,y, by=&quot;date&quot;), list(aims_temp_data,
-                                                                          coral_cover,
-                                                                          fish_species_counts))
-
-
-#fish_coral_cover_temp &lt;- left_join(x=aims_coral_cover, y=fish_species_counts, by=&quot;date&quot;)
-
-#fish_and_coral_cover_temp &lt;- fish_and_coral_cover_temp %&gt;% select(-Upper.confidence.interval, -Lower.confidence.interval, -Confidence.interval.span)
-
-write.csv(fish_temp, &quot;cleaned_data/fish_coral_cover_data.csv&quot;, row.names = FALSE)
-write.csv(fish_coral_cover, &quot;cleaned_data/coral_cover_fish_data.csv&quot;, row.names = FALSE)
-write.csv(fish_coral_cover_temp, &quot;cleaned_data/temp_coral_cover_fish_data.csv&quot;, row.names = FALSE)</code></pre>
+write.csv(fish_species_counts, &quot;cleaned_data/fish_species_counts.csv&quot;, row.names = FALSE)</code></pre>
 </div>
 <div id="sea-grass-data" class="section level2">
 <h2>Sea grass data</h2>
-<pre class="r"><code>seagrass_data &lt;- read.csv(&quot;raw_data/GBR_NESP-TWQ-3.2.1-5.4_JCU_Seagrass_1984-2018_Site-surveys.csv&quot;) %&gt;% 
-    select(-SURVEY_MET, -SURVEY_NAM)
-
-seagrass_data$MONTH &lt;- as.integer(factor(seagrass_data$MONTH, levels = month.name))
-
-names(seagrass_data)[names(seagrass_data) == &quot;MONTH&quot;] &lt;- &quot;month&quot;
-names(seagrass_data)[names(seagrass_data) == &quot;YEAR&quot;] &lt;- &quot;year&quot;</code></pre>
-<p>Create a new dataframe of the monthly average number of unique fish species discovered</p>
-<pre class="r"><code>monthly_avg_fish_species &lt;- fish_species_counts %&gt;%
-    mutate(month = as.integer(format(date, &quot;%m&quot;)), year = as.integer(format(date, &quot;%Y&quot;))) %&gt;%
-    group_by(month, year) %&gt;%
-    summarise(monthly_fish_species = mean(num_of_species))</code></pre>
-<pre><code>## `summarise()` regrouping output by &#39;month&#39; (override with `.groups` argument)</code></pre>
-<p>Likewise, get average temperature of the month</p>
-<pre class="r"><code>aims_monthly_avg_temp &lt;- aims_temp_data %&gt;%
-    mutate(month = as.integer(format(date, &quot;%m&quot;)), year = as.integer(format(date, &quot;%Y&quot;))) %&gt;%
-    group_by(month, year) %&gt;%
-    summarise(monthly_avg_temp_2.0m = mean(avg_water_temp_2.0m_flat_site),
-              monthly_avg_temp_9.0m = mean(avg_water_temp_9.0m_slope_site))</code></pre>
-<pre><code>## `summarise()` regrouping output by &#39;month&#39; (override with `.groups` argument)</code></pre>
-<p>And average monthly coral cover percentage</p>
-<pre class="r"><code>monthly_coral_cover &lt;- coral_cover %&gt;%
-    mutate(month = as.integer(format(date, &quot;%m&quot;)), year = as.integer(format(date, &quot;%Y&quot;))) %&gt;%
-    group_by(month, year) %&gt;%
-    summarise(monthly_mean_coral_cover_percentage = mean(mean_live_coral_cover_percent))</code></pre>
-<pre><code>## `summarise()` regrouping output by &#39;month&#39; (override with `.groups` argument)</code></pre>
-<p>Merge seagrass data with monthly average temperatures and monthly average fish species discovered</p>
-<pre class="r"><code>seagrass_monthly_stats &lt;- Reduce(function(x,y) merge(x,y, by=c(&quot;month&quot;, &quot;year&quot;)), list(seagrass_data,
-                                                                                     aims_monthly_avg_temp,
-                                                                                     monthly_avg_fish_species,
-                                                                                     monthly_coral_cover))
-
-halophila_ovalis_presence &lt;- seagrass_monthly_stats %&gt;%
-    filter(SEDIMENT != &quot;Not recorded&quot;) %&gt;%
-    select(month, year, H_OVALIS, SEDIMENT, TIDAL, DEPTH, monthly_avg_temp_2.0m, monthly_avg_temp_9.0m, monthly_mean_coral_cover_percentage, monthly_fish_species)
-
-write.csv(halophila_ovalis_presence, &quot;cleaned_data/h_ovalis_monthly_presence.csv&quot;, row.names = FALSE)</code></pre>
+<p>We would like to see whether we can classify sea grass species based on the survey location (latitude, longitude, and depth below sea level), and the type of sediment and seabed in which they were discovered.</p>
 </div>
+</div>
+<div id="exploratory-data-analysis" class="section level1">
+<h1>Exploratory data analysis</h1>
+<pre class="r"><code>seagrass_data &lt;- read.csv(&quot;raw_data/GBR_NESP-TWQ-3.2.1-5.4_JCU_Seagrass_1984-2018_Site-surveys.csv&quot;) %&gt;%
+    # filter out for rows where we have information
+    filter(SEDIMENT != &quot;Not recorded&quot; &amp; PRESENCE_A == &quot;Present&quot;) %&gt;%
+
+    # delete columns we are not going to use
+    select(-FID, -MONTH, -YEAR, 
+           -SURVEY_MET, -SURVEY_NAM, 
+           -H_CAPRICOR, -H_TRICOSTA, -H_OVALIS, -H_UNINERVI, -H_DECIPIEN, -H_SPINULOS) </code></pre>
+<p>Let’s examine how many presence/absence we see for each sea grass species:</p>
+<pre class="r"><code>table(seagrass_data$C_ROTUNDAT)</code></pre>
+<pre><code>## 
+##    No   Yes 
+## 30366   187</code></pre>
+<pre class="r"><code>table(seagrass_data$C_SERRULAT)</code></pre>
+<pre><code>## 
+##    No   Yes 
+## 28899  1654</code></pre>
+<pre class="r"><code>table(seagrass_data$E_ACOROIDE)</code></pre>
+<pre><code>## 
+##    No   Yes 
+## 30494    59</code></pre>
+<pre class="r"><code>table(seagrass_data$S_ISOETIFO)</code></pre>
+<pre><code>## 
+##    No   Yes 
+## 30353   200</code></pre>
+<pre class="r"><code>table(seagrass_data$T_CILIATUM)</code></pre>
+<pre><code>## 
+##    No 
+## 30553</code></pre>
+<pre class="r"><code>table(seagrass_data$T_HEMPRICH)</code></pre>
+<pre><code>## 
+##    No   Yes 
+## 29674   879</code></pre>
+<pre class="r"><code>table(seagrass_data$Z_CAPRICOR)</code></pre>
+<pre><code>## 
+##    No   Yes 
+## 20074 10479</code></pre>
+<p>We see that there is actually no data at all for presence of T_CILIATUM. In addition, there are only 59 observations for E_ACOROIDE and 187 observations for C_ROTUNDAT that are actually useful in classifying these two species. Because we have a rather large data set, we want 200 or more observations for our classification model.So, we remove these columns and from our classification problem due to insufficient data.</p>
+<pre class="r"><code>seagrass_data &lt;- seagrass_data %&gt;% select(-C_ROTUNDAT, -T_CILIATUM, -E_ACOROIDE)</code></pre>
+<p>Since we deleted some columns, there may be some observations where all the remaining species columns have “No” values for absence. So, we filter out for rows where presence of at least one species was observed.</p>
+<pre class="r"><code>seagrass_data &lt;- seagrass_data %&gt;%
+    filter(C_SERRULAT==&quot;Yes&quot; | 
+           S_ISOETIFO==&quot;Yes&quot; |
+           T_HEMPRICH==&quot;Yes&quot; |
+           Z_CAPRICOR==&quot;Yes&quot;)</code></pre>
+<p>Now we want to count how many species were found at each location site.</p>
+<pre class="r"><code>count_species_present &lt;- function(C_SERRULAT, S_ISOETIFO, T_HEMPRICH, Z_CAPRICOR) {
+    count = 0
+    
+    if (C_SERRULAT==&quot;Yes&quot;) {
+        count &lt;- count + 1
+    }
+    if (S_ISOETIFO==&quot;Yes&quot;) {
+        count &lt;- count + 1
+    }
+    if (T_HEMPRICH==&quot;Yes&quot;) {
+        count &lt;- count + 1
+    }
+    if (Z_CAPRICOR==&quot;Yes&quot;) {
+        count &lt;- count + 1
+    }
+    
+    return(count)
+}
+
+seagrass_data$num_species_present &lt;- mapply(count_species_present, 
+                                            seagrass_data$C_SERRULAT,
+                                            seagrass_data$S_ISOETIFO,
+                                            seagrass_data$T_HEMPRICH,
+                                            seagrass_data$Z_CAPRICOR)</code></pre>
+<p>How many survey sites had more than 1 species discovered?</p>
+<pre class="r"><code>table(seagrass_data$num_species_present)</code></pre>
+<pre><code>## 
+##     1     2     3 
+## 12381   411     3</code></pre>
+<pre class="r"><code>nrow(seagrass_data)</code></pre>
+<pre><code>## [1] 12795</code></pre>
+<p>We see that only 3.2% of total survey sites recorded more than 1 species observed. For ease of building a classification model, we will remove these rows. We do not want a situation where our model cannot “decide” in classifying our observations. Because we removed only about 3% of over 12,500 observations, we still preserve power.</p>
+<pre class="r"><code>seagrass_data &lt;- seagrass_data %&gt;% filter(num_species_present &lt; 2)</code></pre>
+<pre class="r"><code>table(seagrass_data$C_SERRULAT)</code></pre>
+<pre><code>## 
+##    No   Yes 
+## 11125  1256</code></pre>
+<pre class="r"><code>table(seagrass_data$S_ISOETIFO)</code></pre>
+<pre><code>## 
+##    No   Yes 
+## 12280   101</code></pre>
+<pre class="r"><code>table(seagrass_data$T_HEMPRICH)</code></pre>
+<pre><code>## 
+##    No   Yes 
+## 11558   823</code></pre>
+<pre class="r"><code>table(seagrass_data$Z_CAPRICOR)</code></pre>
+<pre><code>## 
+##    No   Yes 
+##  2180 10201</code></pre>
+<p>So, after some data wrangling and exploratory analysis, we will build a model to classify 4 species of seagrass: Cymodocea Serrulata , Syringodium Isoetifolium, Thalassia Hemprichii, and Zostera Muelleri (subspecies Capricorni). Now, let’s build a <code>SPECIES</code> column that collects all the presence in a single variable.</p>
+<pre class="r"><code># function to make a species column
+get_species_type &lt;- function(C_SERRULAT, S_ISOETIFO, T_HEMPRICH, Z_CAPRICOR) {
+    if (C_SERRULAT==&quot;Yes&quot;) {
+        return(&quot;C_SERRULAT&quot;)
+    } else if (S_ISOETIFO==&quot;Yes&quot;) {
+        return(&quot;S_ISOETIFO&quot;)
+    } else if (T_HEMPRICH ==&quot;Yes&quot;) {
+        return(&quot;T_HEMPRICH&quot;)
+    } else if (Z_CAPRICOR ==&quot;Yes&quot;) {
+        return(&quot;Z_CAPIRCOR&quot;)
+    }
+}
+
+# build species column to classify species of each observation based on presence/absence
+seagrass_data$SPECIES &lt;- mapply(get_species_type, 
+                                seagrass_data$C_SERRULAT, 
+                                seagrass_data$S_ISOETIFO,
+                                seagrass_data$T_HEMPRICH,
+                                seagrass_data$Z_CAPRICOR)
+
+table(seagrass_data$SPECIES)</code></pre>
+<pre><code>## 
+## C_SERRULAT S_ISOETIFO T_HEMPRICH Z_CAPIRCOR 
+##       1256        101        823      10201</code></pre>
+<p>Data frame cleanup</p>
+<pre class="r"><code># convert SPECIES to unordered factor
+seagrass_data$SPECIES &lt;- factor(seagrass_data$SPECIES, ordered=FALSE)
+
+# rename misspelled column in original data set
+names(seagrass_data)[names(seagrass_data) == &quot;LATITUTDE&quot;] &lt;- &quot;LATITUDE&quot;
+
+# only select columns relevant for our ML algorithm
+seagrass_data &lt;- seagrass_data %&gt;% 
+    select(SPECIES, LATITUDE, LONGITUDE, DEPTH, SEDIMENT, TIDAL)</code></pre>
+<p>Write to .csv file.</p>
+<pre class="r"><code>write.csv(seagrass_data, &quot;cleaned_data/seagrass_classification_data.csv&quot;, row.names = FALSE)</code></pre>
 </div>
 
 

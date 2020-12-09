@@ -34,15 +34,10 @@ clean_MooreReef_data <- function(df) {
 moore_reef_water_temp_2.0m <- read.csv("raw_data/temp/AIMS_MooreReef_WaterTemperature_22Oct1997to16Feb2020_2.0m.csv", skip=108, sep= ",", row.names = NULL)
 moore_reef_water_temp_9.0m <- read.csv("raw_data/temp/AIMS_MooreReef_WaterTemperature_22Oct1997to17Dec2017_9.0m.csv", skip=94, sep= ",", row.names = NULL)
 
-#moore_reef_depth_1.9m <- read.csv("data/depth/AIMS_MooreReef_Depth_29Nov2009to21Apr2011_1.9m.csv", skip=49, sep= ",", row.names = NULL)
-#moore_reef_depth_9.2m <- read.csv("data/depth/AIMS_MooreReef_Depth_29Nov2009to24Feb2011_9.2m.csv", skip=49, sep= ",", row.names = NULL)
 
 # run through function defined above to clean and wrangle data
 moore_reef_water_temp_2.0m <- clean_MooreReef_data(moore_reef_water_temp_2.0m)
 moore_reef_water_temp_9.0m <- clean_MooreReef_data(moore_reef_water_temp_9.0m)
-
-#moore_reef_depth_1.9m <- clean_MooreReef_data(moore_reef_depth_1.9m)
-#moore_reef_depth_9.2m <- clean_MooreReef_data(moore_reef_depth_9.2m)
 
 moore_reef_water_temp_2.0m <- moore_reef_water_temp_2.0m %>%
     filter(Water.Temperature..2.0m.MORFL1.Reef.Flat.Site.1_LEVEL2_value_AVG != "Not available")
@@ -55,9 +50,7 @@ moore_reef_water_temp_9.0m <- moore_reef_water_temp_9.0m %>%
 # merge AIMS Moore reef data
 aims_temp_data <- Reduce(function(x,y) merge(x,y, by="date"), list(moore_reef_water_temp_2.0m,
                                                               moore_reef_water_temp_9.0m))
-                                                              #moore_reef_depth_1.9m,
-                                                              #moore_reef_depth_9.2m))
-
+                                                            
 # convert water temp data from string to numeric type
 aims_temp_data$Water.Temperature..2.0m.MORFL1.Reef.Flat.Site.1_LEVEL2_value_AVG <- 
     as.numeric(as.character(aims_temp_data$Water.Temperature..2.0m.MORFL1.Reef.Flat.Site.1_LEVEL2_value_AVG))
@@ -85,12 +78,7 @@ coral_cover$Date <- as.Date(format(date_decimal(coral_cover$Date), "%Y-%m-%d"))
 # rename "Date" to "date"
 names(coral_cover)[names(coral_cover) == "Date"] <- "date"
 colnames(coral_cover) <- c("date", "mean_live_coral_cover_percent", "lower_conf_int", "upper_conf_int", "conf_int_span")
-```
-
-```{r}
-coral_cover_temp <- merge(x=aims_temp_data, y=coral_cover, by="date")
-
-write.csv(coral_cover_temp, "cleaned_data/temperature_and_coral_cover.csv", row.names = FALSE)
+write.csv(coral_cover, "cleaned_data/coral_cover.csv", row.names = FALSE)
 ```
 
 
@@ -113,79 +101,160 @@ fish_species_counts <- fish_census %>%
 names(fish_species_counts)[names(fish_species_counts) == "dateIdentified"] <- "date"
 
 fish_species_counts$date <- as.Date(fish_species_counts$date)
-```
 
-
-Merge AIMS, coral cover and fish census data by data
-```{r}
-fish_temp <- merge(x=aims_temp_data, y=fish_species_counts, by="date")
-fish_coral_cover <- merge(x=coral_cover, y=fish_species_counts, by="date")
-
-fish_coral_cover_temp <- Reduce(function(x,y) merge(x,y, by="date"), list(aims_temp_data,
-                                                                          coral_cover,
-                                                                          fish_species_counts))
-
-
-#fish_coral_cover_temp <- left_join(x=aims_coral_cover, y=fish_species_counts, by="date")
-
-#fish_and_coral_cover_temp <- fish_and_coral_cover_temp %>% select(-Upper.confidence.interval, -Lower.confidence.interval, -Confidence.interval.span)
-
-write.csv(fish_temp, "cleaned_data/fish_temp_data.csv", row.names = FALSE)
-write.csv(fish_coral_cover, "cleaned_data/coral_cover_fish_data.csv", row.names = FALSE)
-write.csv(fish_coral_cover_temp, "cleaned_data/temp_coral_cover_fish_data.csv", row.names = FALSE)
+write.csv(fish_species_counts, "cleaned_data/fish_species_counts.csv", row.names = FALSE)
 ```
 
 
 ## Sea grass data
+
+We would like to see whether we can classify sea grass species based on the survey location (latitude, longitude, and depth below sea level), and the type of sediment and seabed in which they were discovered.
+
+# Exploratory data analysis
 ```{r}
-seagrass_data <- read.csv("raw_data/GBR_NESP-TWQ-3.2.1-5.4_JCU_Seagrass_1984-2018_Site-surveys.csv") %>% 
-    select(-SURVEY_MET, -SURVEY_NAM)
+seagrass_data <- read.csv("raw_data/GBR_NESP-TWQ-3.2.1-5.4_JCU_Seagrass_1984-2018_Site-surveys.csv") %>%
+    # filter out for rows where we have information
+    filter(SEDIMENT != "Not recorded" & PRESENCE_A == "Present") %>%
 
-seagrass_data$MONTH <- as.integer(factor(seagrass_data$MONTH, levels = month.name))
+    # delete columns we are not going to use
+    select(-FID, -MONTH, -YEAR, 
+           -SURVEY_MET, -SURVEY_NAM, 
+           -H_CAPRICOR, -H_TRICOSTA, -H_OVALIS, -H_UNINERVI, -H_DECIPIEN, -H_SPINULOS) 
+```
 
-names(seagrass_data)[names(seagrass_data) == "MONTH"] <- "month"
-names(seagrass_data)[names(seagrass_data) == "YEAR"] <- "year"
+Let's examine how many presence/absence we see for each sea grass species:
+```{r}
+table(seagrass_data$C_ROTUNDAT)
+
+table(seagrass_data$C_SERRULAT)
+
+table(seagrass_data$E_ACOROIDE)
+
+table(seagrass_data$S_ISOETIFO)
+
+table(seagrass_data$T_CILIATUM)
+
+table(seagrass_data$T_HEMPRICH)
+
+table(seagrass_data$Z_CAPRICOR)
 ```
 
 
-Create a new dataframe of the monthly average number of unique fish species discovered 
+We see that there is actually no data at all for presence of T_CILIATUM. In addition, there are only 59 observations for E_ACOROIDE and 187 observations for C_ROTUNDAT that are actually useful in classifying these two species. Because we have a rather large data set, we want 200 or more observations for our classification model.So, we remove these columns and from our classification problem due to insufficient data.
 ```{r}
-monthly_avg_fish_species <- fish_species_counts %>%
-    mutate(month = as.integer(format(date, "%m")), year = as.integer(format(date, "%Y"))) %>%
-    group_by(month, year) %>%
-    summarise(monthly_fish_species = mean(num_of_species))
+seagrass_data <- seagrass_data %>% select(-C_ROTUNDAT, -T_CILIATUM, -E_ACOROIDE)
 ```
 
 
-Likewise, get average temperature of the month
+Since we deleted some columns, there may be some observations where all the remaining species columns have "No" values for absence. So, we filter out for rows where presence of at least one species was observed.
 ```{r}
-aims_monthly_avg_temp <- aims_temp_data %>%
-    mutate(month = as.integer(format(date, "%m")), year = as.integer(format(date, "%Y"))) %>%
-    group_by(month, year) %>%
-    summarise(monthly_avg_temp_2.0m = mean(avg_water_temp_2.0m_flat_site),
-              monthly_avg_temp_9.0m = mean(avg_water_temp_9.0m_slope_site))
-```
-
-And average monthly coral cover percentage
-```{r}
-monthly_coral_cover <- coral_cover %>%
-    mutate(month = as.integer(format(date, "%m")), year = as.integer(format(date, "%Y"))) %>%
-    group_by(month, year) %>%
-    summarise(monthly_mean_coral_cover_percentage = mean(mean_live_coral_cover_percent))
+seagrass_data <- seagrass_data %>%
+    filter(C_SERRULAT=="Yes" | 
+           S_ISOETIFO=="Yes" |
+           T_HEMPRICH=="Yes" |
+           Z_CAPRICOR=="Yes")
 ```
 
 
 
-Merge seagrass data with monthly average temperatures and monthly average fish species discovered
+Now we want to count how many species were found at each location site.
 ```{r}
-seagrass_monthly_stats <- Reduce(function(x,y) merge(x,y, by=c("month", "year")), list(seagrass_data,
-                                                                                     aims_monthly_avg_temp,
-                                                                                     monthly_avg_fish_species,
-                                                                                     monthly_coral_cover))
+count_species_present <- function(C_SERRULAT, S_ISOETIFO, T_HEMPRICH, Z_CAPRICOR) {
+    count = 0
+    
+    if (C_SERRULAT=="Yes") {
+        count <- count + 1
+    }
+    if (S_ISOETIFO=="Yes") {
+        count <- count + 1
+    }
+    if (T_HEMPRICH=="Yes") {
+        count <- count + 1
+    }
+    if (Z_CAPRICOR=="Yes") {
+        count <- count + 1
+    }
+    
+    return(count)
+}
 
-halophila_ovalis_presence <- seagrass_monthly_stats %>%
-    filter(SEDIMENT != "Not recorded") %>%
-    select(month, year, H_OVALIS, SEDIMENT, TIDAL, DEPTH, monthly_avg_temp_2.0m, monthly_avg_temp_9.0m, monthly_mean_coral_cover_percentage, monthly_fish_species)
-
-write.csv(halophila_ovalis_presence, "cleaned_data/h_ovalis_monthly_presence.csv", row.names = FALSE)
+seagrass_data$num_species_present <- mapply(count_species_present, 
+                                            seagrass_data$C_SERRULAT,
+                                            seagrass_data$S_ISOETIFO,
+                                            seagrass_data$T_HEMPRICH,
+                                            seagrass_data$Z_CAPRICOR)
 ```
+
+
+How many survey sites had more than 1 species discovered?
+```{r}
+table(seagrass_data$num_species_present)
+
+nrow(seagrass_data)
+```
+
+We see that only 3.2% of total survey sites recorded more than 1 species observed. For ease of building a classification model, we will remove these rows. We do not want a situation where our model cannot "decide" in classifying our observations. Because we removed only about 3% of over 12,500 observations, we still preserve power.
+
+```{r}
+seagrass_data <- seagrass_data %>% filter(num_species_present < 2)
+```
+
+
+```{r}
+table(seagrass_data$C_SERRULAT)
+
+table(seagrass_data$S_ISOETIFO)
+
+table(seagrass_data$T_HEMPRICH)
+
+table(seagrass_data$Z_CAPRICOR)
+```
+
+
+So, after some data wrangling and exploratory analysis, we will build a model to classify 4 species of seagrass: Cymodocea Serrulata , Syringodium Isoetifolium, Thalassia Hemprichii, and Zostera Muelleri (subspecies Capricorni). Now, let's build a `SPECIES` column that collects all the presence in a single variable.
+
+```{r}
+# function to make a species column
+get_species_type <- function(C_SERRULAT, S_ISOETIFO, T_HEMPRICH, Z_CAPRICOR) {
+    if (C_SERRULAT=="Yes") {
+        return("C_SERRULAT")
+    } else if (S_ISOETIFO=="Yes") {
+        return("S_ISOETIFO")
+    } else if (T_HEMPRICH =="Yes") {
+        return("T_HEMPRICH")
+    } else if (Z_CAPRICOR =="Yes") {
+        return("Z_CAPIRCOR")
+    }
+}
+
+# build species column to classify species of each observation based on presence/absence
+seagrass_data$SPECIES <- mapply(get_species_type, 
+                                seagrass_data$C_SERRULAT, 
+                                seagrass_data$S_ISOETIFO,
+                                seagrass_data$T_HEMPRICH,
+                                seagrass_data$Z_CAPRICOR)
+
+table(seagrass_data$SPECIES)
+```
+
+
+Data frame cleanup
+```{r}
+# convert SPECIES to unordered factor
+seagrass_data$SPECIES <- factor(seagrass_data$SPECIES, ordered=FALSE)
+
+# rename misspelled column in original data set
+names(seagrass_data)[names(seagrass_data) == "LATITUTDE"] <- "LATITUDE"
+
+# only select columns relevant for our ML algorithm
+seagrass_data <- seagrass_data %>% 
+    select(SPECIES, LATITUDE, LONGITUDE, DEPTH, SEDIMENT, TIDAL)
+```
+
+Write to .csv file.
+```{r}
+write.csv(seagrass_data, "cleaned_data/seagrass_classification_data.csv", row.names = FALSE)
+```
+
+
+
