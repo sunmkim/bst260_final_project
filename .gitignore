@@ -1,5 +1,7 @@
 /raw_data
 
+config.R
+
 *.RData
 *.Rhistory
 *.DS_Store

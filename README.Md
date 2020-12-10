@@ -3,3 +3,15 @@
 - Manasi Mohan
 - Cheryn Aouaj
 - Sun Kim
+
+## Packages used
+- `tidyverse`
+- `lubridate`
+- `plotly`
+- `randomForest`
+- `caret`
+- `nnet`
+
+## Navigation
+ - `/cleaned_data`: data cleaned and wrangled from raw data
+ 

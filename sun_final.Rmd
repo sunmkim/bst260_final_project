@@ -18,6 +18,8 @@ library(caret)
 library(nnet)
 library(plotly)
 library(randomForest)
+
+options(browser = 'false')
 ```
 
 # 1. Data wrangling
@@ -255,12 +257,16 @@ names(seagrass_data)[names(seagrass_data) == "LATITUTDE"] <- "LATITUDE"
 # only select columns relevant for our ML algorithm
 seagrass_data <- seagrass_data %>% 
     select(SPECIES, LATITUDE, LONGITUDE, DEPTH, SEDIMENT, TIDAL)
+
+# create negative depth for visualization purposes
+seagrass_data$NEG_DEPTH <- -1 * seagrass_data$DEPTH
 ```
 
 Write to .csv file.
 ```{r}
 write.csv(seagrass_data, "cleaned_data/seagrass_classification_data.csv", row.names = FALSE)
 ```
+
 
 \
 \
@@ -283,13 +289,24 @@ temp_coral_cover <- merge(x=temp, y=coral_cover, by="date")
 ```
 
 ```{r}
-temp_coral_cover %>%
+temp_coral_2m <- temp_coral_cover %>%
     ggplot(aes(avg_water_temp_2.0m_flat_site, mean_live_coral_cover_percent)) + 
-    geom_point()
+    geom_point() +
+    xlab("Avg water temperature at 2.0m (°C)") +
+    ylab("Mean coral cover percentage")
 
-temp_coral_cover %>%
+temp_coral_9m <- temp_coral_cover %>%
     ggplot(aes(avg_water_temp_9.0m_slope_site, mean_live_coral_cover_percent)) + 
-    geom_point()
+    geom_point() +
+    xlab("Avg water temperature at 9.0m (°C)") +
+    ylab("Mean coral cover percentage")
+
+# display and save plots
+temp_coral_2m
+ggsave("viz/temp_coral_2m.png", plot=temp_coral_2m)
+
+temp_coral_9m
+ggsave("viz/temp_coral_9m.png", plot=temp_coral_9m)
 ```
 
 
@@ -301,10 +318,23 @@ fish <- read_csv("cleaned_data/fish_species_counts.csv")
 fish_temp <- merge(x=temp, y=fish, by="date")
 
 # water temp at 2.0m
-fish_temp %>% ggplot(aes(avg_water_temp_2.0m_flat_site, num_of_species)) + geom_point()
+fish_temp_2m <- fish_temp %>% ggplot(aes(avg_water_temp_2.0m_flat_site, num_of_species)) +
+  geom_point() +
+  xlab("Avg water temperature at 2.0m (°C)") +
+  ylab("Num. of unique fish species")
 
 # water temp at92.0m
-fish_temp %>% ggplot(aes(avg_water_temp_9.0m_slope_site, num_of_species)) + geom_point()
+fish_temp_9m <- fish_temp %>% ggplot(aes(avg_water_temp_9.0m_slope_site, num_of_species)) + 
+  geom_point() +
+  xlab("Avg water temperature at 9.0m (°C)") +
+  ylab("Num. of unique fish species")
+
+# display and save plots
+fish_temp_2m
+ggsave("viz/fish_temp_2m.png", plot=fish_temp_2m)
+
+fish_temp_9m
+ggsave("viz/fish_temp_9m.png", plot=fish_temp_9m)
 ```
 
 
@@ -347,16 +377,27 @@ As expected, results are very similar.
 We can assess this visually to confirm our results.
 ```{r}
 # water temp at 2.0m
-test_set %>% 
+fitted_fish_2m <- test_set %>% 
     ggplot(aes(avg_water_temp_2.0m_flat_site, num_of_species)) + 
     geom_point() +
-    geom_abline(intercept=fish_temp_2.0m$coefficients[1], slope=fish_temp_2.0m$coefficients[2], col="red")
+    geom_abline(intercept=fish_temp_2.0m$coefficients[1], slope=fish_temp_2.0m$coefficients[2], col="red") +
+    xlab("Avg water temperature at 2.0m (°C)") +
+    ylab("Num. of unique fish species")
 
 # water temp at 9.0m
-test_set %>% 
+fitted_fish_9m <- test_set %>% 
     ggplot(aes(avg_water_temp_9.0m_slope_site, num_of_species)) + 
     geom_point() +
-    geom_abline(intercept=fish_temp_9.0m$coefficients[1], slope=fish_temp_9.0m$coefficients[2], col="blue")
+    geom_abline(intercept=fish_temp_9.0m$coefficients[1], slope=fish_temp_9.0m$coefficients[2], col="blue") +
+    xlab("Avg water temperature at 9.0m (°C)") +
+    ylab("Num. of unique fish species")
+
+# display and save plots
+fitted_fish_2m
+ggsave("viz/fitted_fish_2m.png", plot=fitted_fish_2m)
+
+fitted_fish_9m
+ggsave("viz/fitted_fish_9m.png", plot=fitted_fish_9m)
 ```
 
 
@@ -380,25 +421,54 @@ seagrass$SEDIMENT <- as.factor(seagrass$SEDIMENT)
 seagrass$TIDAL <- as.factor(seagrass$TIDAL)
 
 head(seagrass)
+```
 
+Here are the summary statistics of the sea grass data we cleaned and wrangled.
+```{r}
 summary(seagrass)
 ```
 
 First we plot sea grass according to location (latitude and longitude). Then we will add a third axis (depth) to visualize this in 3-dimensions using `plotly` package. Since depth is measured in meters below sea level, we visualize this in negative values.
-```{r}
-seagrass %>%  ggplot() + geom_point(aes(x=LATITUDE, y=LONGITUDE, color=SPECIES))
 
-plot_ly(seagrass, x=~LATITUDE, y=~LONGITUDE, z=~-DEPTH, color=~SPECIES, type="scatter3d", mode="markers")
+
+```{r}
+source("config.R")
+
+Sys.setenv("plotly_username"=username)
+Sys.setenv("plotly_api_key"=api_key)
+```
+
+```{r}
+seagrass_data_viz_2d <- seagrass %>%  ggplot() + 
+  geom_point(aes(x=LATITUDE, y=LONGITUDE, color=SPECIES)) + 
+  ggtitle("Seagrass present in the Great Barrier Reef, 1999 - 2003")
+
+seagrass_data_viz_2d
+ggsave("viz/seagrass_data_viz_2d.png", plot=seagrass_data_viz_2d)
+
+
+plotly_3d <- plot_ly(seagrass, x=~LATITUDE, y=~LONGITUDE, z=~-DEPTH, color=~SPECIES, type="scatter3d", mode="markers") %>%
+  layout(title = "Seagrass present in the Great Barrier Reef, 1999 - 2003")
+
+#api_create(plotly_3d, filename = "seagrass_exp_data_viz")
+
+plotly_3d
 ```
 
 We can also see how our categorical predictors relate to sea grass species.
 
 ```{r}
-seagrass %>% 
+seagrass_sediment <- seagrass %>% 
     ggplot(aes(SEDIMENT, fill=SPECIES)) + geom_bar(width=.5, position = "dodge")
 
-seagrass %>% 
+seagrass_tidal <- seagrass %>% 
     ggplot(aes(TIDAL, fill=SPECIES)) + geom_bar(width=.5, position = "dodge")
+
+seagrass_sediment
+ggsave("viz/seagrass_sediment.png", plot=seagrass_sediment)
+
+seagrass_tidal
+ggsave("viz/seagrass_tidal.png", plot=seagrass_tidal)
 ```
 
 
@@ -435,30 +505,51 @@ We see that our classification model works quite well, especially for T_HEMPRICH
 We can visually assess our predicted values with true values of species to see how our model performed.
 ```{r}
 # true values
-plot_ly(test_set, x=~LATITUDE, y=~LONGITUDE, z=~-DEPTH, color=~SPECIES, type="scatter3d", mode="markers")
+true_class <- plot_ly(test_set, x=~LATITUDE, y=~LONGITUDE, z=~-DEPTH, color=~SPECIES, type="scatter3d", mode="markers") %>%
+  layout(title = "True seagrass classification in test set")
+
+true_class
+#api_create(true_class, filename = "seagrass_true_classification")
 
 # predicted values
-plot_ly(test_set, x=~LATITUDE, y=~LONGITUDE, z=~-DEPTH, color=~rf_pred, type="scatter3d", mode="markers")
+predicted_class <- plot_ly(test_set, x=~LATITUDE, y=~LONGITUDE, z=~-DEPTH, color=~rf_pred, type="scatter3d", mode="markers") %>%
+  layout(title = "Predicted seagrass classification in test set")
+
+predicted_class
+#api_create(predicted_class, filename = "seagrass_pred_classification")
 ```
 
 For sediment type:
 
 ```{r}
-test_set %>% 
-    ggplot(aes(SEDIMENT, fill=SPECIES)) + geom_bar(width=.5, position = "dodge")
+true_rf_sediment <- test_set %>% 
+    ggplot(aes(SEDIMENT, fill=SPECIES)) + geom_bar(width=.5, position = "dodge") + labs(fill="True species")
 
-test_set %>% 
-    ggplot(aes(SEDIMENT, fill=rf_pred)) + geom_bar(width=.5, position = "dodge")
+pred_rf_sediment <- test_set %>% 
+    ggplot(aes(SEDIMENT, fill=rf_pred)) + geom_bar(width=.5, position = "dodge") + labs(fill="Predicted species")
+
+
+true_rf_sediment
+ggsave("viz/true_rf_sediment.png", plot=true_rf_sediment)
+
+pred_rf_sediment
+ggsave("viz/pred_rf_sediment.png", plot=pred_rf_sediment)
 ```
 
 
 For seabed type:
 ```{r}
-test_set %>% 
-    ggplot(aes(TIDAL, fill=SPECIES)) + geom_bar(width=.5, position = "dodge")
+true_rf_tidal <- test_set %>% 
+    ggplot(aes(TIDAL, fill=SPECIES)) + geom_bar(width=.5, position = "dodge") + labs(fill="True species")
 
-test_set %>% 
-    ggplot(aes(TIDAL, fill=rf_pred)) + geom_bar(width=.5, position = "dodge")
+pred_rf_tidal <- test_set %>% 
+    ggplot(aes(TIDAL, fill=rf_pred)) + geom_bar(width=.5, position = "dodge") + labs(fill="Predicted species")
+
+true_rf_tidal
+ggsave("viz/true_rf_tidal.png", plot=true_rf_tidal)
+
+pred_rf_tidal
+ggsave("viz/pred_rf_tidal.png", plot=pred_rf_tidal)
 ```
 
 
@@ -515,41 +606,4 @@ We see that our multinomial logistic model has about 91% overall accuracy, which
 
 The model seems to predict T_HEMPRICH the best with 88.7% sensitivity and 98.8% specificity. The model also does not perform well for sensitivity of C_SERRULAT, with only about 41.7% sensitivity.
 
-Again, we can assess our results visually:
-
-```{r}
-# true values
-plot_ly(test_set, x=~LATITUDE, y=~LONGITUDE, z=~-DEPTH, color=~SPECIES, type="scatter3d", mode="markers")
-
-# predicted values
-plot_ly(test_set, x=~LATITUDE, y=~LONGITUDE, z=~-DEPTH, color=~predicted_class, type="scatter3d", mode="markers")
-```
-
-
-For sediment type:
-
-```{r}
-test_set %>% 
-    ggplot(aes(SEDIMENT, fill=SPECIES)) + geom_bar(width=.5, position = "dodge")
-
-test_set %>% 
-    ggplot(aes(SEDIMENT, fill=predicted_class)) + geom_bar(width=.5, position = "dodge")
-```
-
-
-For seabed type:
-```{r}
-test_set %>% 
-    ggplot(aes(TIDAL, fill=SPECIES)) + geom_bar(width=.5, position = "dodge")
-
-test_set %>% 
-    ggplot(aes(TIDAL, fill=predicted_class)) + geom_bar(width=.5, position = "dodge")
-```
-
-
-We can confirm in our visualizations that the logistic regression model failed to predict for `S_ISOETIFO`.
-
-
 So, we see that the overall accuracy for multinomial logistic regression model vs random forest model was 95.6% and 90.9%, respectively. However, the overall accuracy stated for the logistic regression model is deceiving since it did not perform well in sensitivity in 2 out of 4 classes.
-
-
