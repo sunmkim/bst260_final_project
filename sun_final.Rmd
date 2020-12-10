@@ -1,0 +1,555 @@
+---
+title: 'BST-260 Project: Sun''s Work'
+author: "Sun M. Kim"
+date: "12/9/2020"
+output: 
+    html_document:
+        toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(lubridate)
+library(caret)
+library(nnet)
+library(plotly)
+library(randomForest)
+```
+
+# 1. Data wrangling
+First, we will import the raw data, clean them, and merge them according to our analysis needs. Then, we will take the monthly average to incorporate other data.
+
+## 1.1 Moore reef data from AIMS 
+```{r}
+# function to clean and wrangle AIMS Moore Reef data to deal with column names and column placement
+clean_MooreReef_data <- function(df) {
+    df[,2:ncol(df)] <- df[,1:ncol(df)]
+    df[,1] <- rownames(df)
+    df <- df %>% select(date, colnames(df)[ncol(df)])
+    return(df)
+}
+```
+
+```{r}
+moore_reef_water_temp_2.0m <- read.csv("raw_data/temp/AIMS_MooreReef_WaterTemperature_22Oct1997to16Feb2020_2.0m.csv", skip=108, sep= ",", row.names = NULL)
+moore_reef_water_temp_9.0m <- read.csv("raw_data/temp/AIMS_MooreReef_WaterTemperature_22Oct1997to17Dec2017_9.0m.csv", skip=94, sep= ",", row.names = NULL)
+
+
+# run through function defined above to clean and wrangle data
+moore_reef_water_temp_2.0m <- clean_MooreReef_data(moore_reef_water_temp_2.0m)
+moore_reef_water_temp_9.0m <- clean_MooreReef_data(moore_reef_water_temp_9.0m)
+
+moore_reef_water_temp_2.0m <- moore_reef_water_temp_2.0m %>%
+    filter(Water.Temperature..2.0m.MORFL1.Reef.Flat.Site.1_LEVEL2_value_AVG != "Not available")
+
+moore_reef_water_temp_9.0m <- moore_reef_water_temp_9.0m %>%
+    filter(Water.Temperature..9.0m.MORSL1.Reef.Slope.Site.1_LEVEL2_value_AVG != "Not available")
+```
+
+```{r}
+# merge AIMS Moore reef temperature data
+aims_temp_data <- Reduce(function(x,y) merge(x,y, by="date"), list(moore_reef_water_temp_2.0m,
+                                                              moore_reef_water_temp_9.0m))
+                                                            
+# convert water temp data from string to numeric type
+aims_temp_data$Water.Temperature..2.0m.MORFL1.Reef.Flat.Site.1_LEVEL2_value_AVG <- 
+    as.numeric(as.character(aims_temp_data$Water.Temperature..2.0m.MORFL1.Reef.Flat.Site.1_LEVEL2_value_AVG))
+
+aims_temp_data$Water.Temperature..9.0m.MORSL1.Reef.Slope.Site.1_LEVEL2_value_AVG <- 
+    as.numeric(as.character(aims_temp_data$Water.Temperature..9.0m.MORSL1.Reef.Slope.Site.1_LEVEL2_value_AVG))
+
+# convert to date column into date type
+aims_temp_data$date <- as.Date(aims_temp_data$date)
+
+colnames(aims_temp_data) <- c("date", "avg_water_temp_2.0m_flat_site", "avg_water_temp_9.0m_slope_site")
+
+
+# write combined AIMS Moore reef data
+write.csv(aims_temp_data, "cleaned_data/aims_temperatures.csv", row.names = FALSE)
+```
+
+
+## 1.2 Coral cover data
+```{r}
+# convert date-decimal in coral cover to YYYY-MM-DD format
+coral_cover <- read.csv("raw_data/trendgbr-coral-cover-with-ci.csv")
+coral_cover$Date <- as.Date(format(date_decimal(coral_cover$Date), "%Y-%m-%d"))
+
+# rename "Date" to "date"
+names(coral_cover)[names(coral_cover) == "Date"] <- "date"
+colnames(coral_cover) <- c("date", "mean_live_coral_cover_percent", "lower_conf_int", "upper_conf_int", "conf_int_span")
+write.csv(coral_cover, "cleaned_data/coral_cover.csv", row.names = FALSE)
+```
+
+
+## 1.3 Fish census data
+```{r}
+fish_census <- read.csv("raw_data/Fish census 1992-2015.csv", sep="\t", header=T)
+
+fish_census <- fish_census %>% select(gbifID, class, family, genus, species, verbatimScientificName, decimalLatitude, decimalLongitude, dateIdentified)
+fish_census$dateIdentified <- ymd_hms(fish_census$dateIdentified)
+```
+
+Group fish census by date, then count how many unique fish species were observed on a given date
+```{r}
+fish_species_counts <- fish_census %>%
+    arrange(dateIdentified) %>%
+    group_by(dateIdentified) %>%
+    summarise(num_of_species=n_distinct(species))
+
+# rename "dateIdentified" to "date"
+names(fish_species_counts)[names(fish_species_counts) == "dateIdentified"] <- "date"
+
+fish_species_counts$date <- as.Date(fish_species_counts$date)
+
+write.csv(fish_species_counts, "cleaned_data/fish_species_counts.csv", row.names = FALSE)
+```
+
+
+## 1.4 Sea grass data
+
+We would like to see whether we can classify sea grass species based on the survey location (latitude, longitude, and depth below sea level), and the type of sediment and seabed in which they were discovered. 
+
+We decided not to use sea grass species belonging to the Halophila genus because they are so widespread and common in tropical waters. Since the halophila genus were also present in nearly all the survey sites where other sea grass species were found, we determined that it did not make much sense from a scientific perspective, as well as from the data set we were given.
+
+```{r}
+seagrass_data <- read.csv("raw_data/GBR_NESP-TWQ-3.2.1-5.4_JCU_Seagrass_1984-2018_Site-surveys.csv") %>%
+    # filter out for rows where we have information
+    filter(SEDIMENT != "Not recorded" & PRESENCE_A == "Present") %>%
+
+    # delete columns we are not going to use
+    select(-FID, -MONTH, -YEAR, 
+           -SURVEY_MET, -SURVEY_NAM, 
+           # remove seagrass belonging to halophila genus
+           -H_CAPRICOR, -H_TRICOSTA, -H_OVALIS, -H_UNINERVI, -H_DECIPIEN, -H_SPINULOS) 
+```
+
+Let's examine how many presence/absence we see for each sea grass species:
+```{r}
+table(seagrass_data$C_ROTUNDAT)
+
+table(seagrass_data$C_SERRULAT)
+
+table(seagrass_data$E_ACOROIDE)
+
+table(seagrass_data$S_ISOETIFO)
+
+table(seagrass_data$T_CILIATUM)
+
+table(seagrass_data$T_HEMPRICH)
+
+table(seagrass_data$Z_CAPRICOR)
+```
+
+
+We see that there is actually no data at all for presence of T_CILIATUM. In addition, there are only 59 observations for E_ACOROIDE and 187 observations for C_ROTUNDAT that are actually useful in classifying these two species. Because we have a rather large data set, we want 200 or more observations for our classification model.So, we remove these columns and from our classification problem due to insufficient data.
+```{r}
+seagrass_data <- seagrass_data %>% select(-C_ROTUNDAT, -T_CILIATUM, -E_ACOROIDE)
+```
+
+
+Since we deleted some columns, there may be some observations where all the remaining species columns have "No" values for absence. So, we filter out for rows where presence of at least one species was observed.
+```{r}
+seagrass_data <- seagrass_data %>%
+    filter(C_SERRULAT=="Yes" | 
+           S_ISOETIFO=="Yes" |
+           T_HEMPRICH=="Yes" |
+           Z_CAPRICOR=="Yes")
+```
+
+
+
+Now we want to count how many species were found at each location site.
+```{r}
+count_species_present <- function(C_SERRULAT, S_ISOETIFO, T_HEMPRICH, Z_CAPRICOR) {
+    count = 0
+    
+    if (C_SERRULAT=="Yes") {
+        count <- count + 1
+    }
+    if (S_ISOETIFO=="Yes") {
+        count <- count + 1
+    }
+    if (T_HEMPRICH=="Yes") {
+        count <- count + 1
+    }
+    if (Z_CAPRICOR=="Yes") {
+        count <- count + 1
+    }
+    
+    return(count)
+}
+
+seagrass_data$num_species_present <- mapply(count_species_present, 
+                                            seagrass_data$C_SERRULAT,
+                                            seagrass_data$S_ISOETIFO,
+                                            seagrass_data$T_HEMPRICH,
+                                            seagrass_data$Z_CAPRICOR)
+```
+
+
+How many survey sites had more than 1 species discovered?
+```{r}
+table(seagrass_data$num_species_present)
+
+nrow(seagrass_data)
+```
+
+We see that only 3.2% of total survey sites recorded more than 1 species observed. For ease of building a classification model, we will remove these rows. We do not want a situation where our model cannot "decide" in classifying our observations. Because we removed only about 3% of over 12,500 observations, we still preserve statistical power.
+
+```{r}
+seagrass_data <- seagrass_data %>% filter(num_species_present < 2)
+```
+
+
+```{r}
+table(seagrass_data$C_SERRULAT)
+
+table(seagrass_data$S_ISOETIFO)
+
+table(seagrass_data$T_HEMPRICH)
+
+table(seagrass_data$Z_CAPRICOR)
+```
+
+
+So, after some data wrangling and exploratory analysis, we will build a model to classify 4 species of seagrass: Cymodocea Serrulata , Syringodium Isoetifolium, Thalassia Hemprichii, and Zostera Muelleri (subspecies Capricorni). Now, let's build a `SPECIES` column that collects all the presence in a single variable.
+
+```{r}
+# function to make a species column
+get_species_type <- function(C_SERRULAT, S_ISOETIFO, T_HEMPRICH, Z_CAPRICOR) {
+    if (C_SERRULAT=="Yes") {
+        return("C_SERRULAT")
+    } else if (S_ISOETIFO=="Yes") {
+        return("S_ISOETIFO")
+    } else if (T_HEMPRICH =="Yes") {
+        return("T_HEMPRICH")
+    } else if (Z_CAPRICOR =="Yes") {
+        return("Z_CAPIRCOR")
+    }
+}
+
+# build species column to classify species of each observation based on presence/absence
+seagrass_data$SPECIES <- mapply(get_species_type, 
+                                seagrass_data$C_SERRULAT, 
+                                seagrass_data$S_ISOETIFO,
+                                seagrass_data$T_HEMPRICH,
+                                seagrass_data$Z_CAPRICOR)
+
+table(seagrass_data$SPECIES)
+```
+
+
+Data frame cleanup
+```{r}
+# convert SPECIES to unordered factor
+seagrass_data$SPECIES <- factor(seagrass_data$SPECIES, ordered=FALSE)
+
+# rename misspelled column in original data set
+names(seagrass_data)[names(seagrass_data) == "LATITUTDE"] <- "LATITUDE"
+
+# only select columns relevant for our ML algorithm
+seagrass_data <- seagrass_data %>% 
+    select(SPECIES, LATITUDE, LONGITUDE, DEPTH, SEDIMENT, TIDAL)
+```
+
+Write to .csv file.
+```{r}
+write.csv(seagrass_data, "cleaned_data/seagrass_classification_data.csv", row.names = FALSE)
+```
+
+\
+\
+\
+
+# 2. Regression and machine learning
+## 2.1 Effect of sea water temperature on fish in the Great Barrier Reef
+### 2.1.1 Exploratory data analysis and visualization
+In this analysis, we will examine the effects of water temperature on the number of unique fish species observed in the Great Barrier Reef from 1997 to 2011.
+
+Originally, we wanted to examine a relationship between water temperature and coral cover. However, we quickly saw that, when visualized, there does not seem to be a linear relation and we did not want to fit a mis-specified model.
+
+
+Merge between temperature and coral cover data sets
+```{r}
+temp <- read_csv("cleaned_data/aims_temperatures.csv")
+coral_cover <- read_csv("cleaned_data/coral_cover.csv")
+
+temp_coral_cover <- merge(x=temp, y=coral_cover, by="date")
+```
+
+```{r}
+temp_coral_cover %>%
+    ggplot(aes(avg_water_temp_2.0m_flat_site, mean_live_coral_cover_percent)) + 
+    geom_point()
+
+temp_coral_cover %>%
+    ggplot(aes(avg_water_temp_9.0m_slope_site, mean_live_coral_cover_percent)) + 
+    geom_point()
+```
+
+
+As we can see, there is no linear relationship. While there are 2 or 3 clusters of coral cover percentage values, they seem to be pretty consistent across the range of water temperatures at 2.0m and 9.0 below sea level.
+
+We also suspect that increase in water temperature could also affect diversity in sea life. So, we will examine the relationship between water temperature and the number of unique species of fish observed in the Great Barrier Ree. First, we can do some basic visualization by plotting the relationship between water temperatures at depth 2.0m and 9.0m with the number of unique fish species observedin the Great Barrier Reef.
+```{r}
+fish <- read_csv("cleaned_data/fish_species_counts.csv")
+fish_temp <- merge(x=temp, y=fish, by="date")
+
+# water temp at 2.0m
+fish_temp %>% ggplot(aes(avg_water_temp_2.0m_flat_site, num_of_species)) + geom_point()
+
+# water temp at92.0m
+fish_temp %>% ggplot(aes(avg_water_temp_9.0m_slope_site, num_of_species)) + geom_point()
+```
+
+
+There seems to be a bit of negative linear relationship going on, so we will fit a linear model examining the number of unique species discovered in relation to rising temperature.
+
+### 2.1.2 Linear regression
+Now, we can split our data set into train and test sets, using 0.6 to partition our data. Our outcome is the mean coral cover percentage and water temperature is our covariate. We will fit 2 linear regression models: one examining effect of water temperature at 2.0m and the other examining the effect of temperature at 9.0m.
+
+```{r}
+train_index <- createDataPartition(y=fish_temp$num_of_species, times=1, p = 0.6, list=FALSE)
+
+train_set <- fish_temp[train_index, ]
+test_set <- fish_temp[-train_index, ]
+```
+
+Fit linear regression model:
+```{r}
+fish_temp_2.0m <- lm(num_of_species ~ avg_water_temp_2.0m_flat_site, data=train_set)
+summary(fish_temp_2.0m)
+
+fish_temp_9.0m <- lm(num_of_species ~ avg_water_temp_9.0m_slope_site, data=train_set)
+summary(fish_temp_9.0m)
+```
+
+We see that the models are very similar in results. The coefficient with covariate 2.0m water temperature and 9.0 water temperature is -2.56 and -2.61, respectively.
+
+Although we should not expect a major difference between how each of the two models performs, let's compare them anyways to assess which water temperature depth is a better predictor of unique fish species observed in the Great Barrier Reef. 
+
+```{r}
+pred_2.0m <- predict(fish_temp_2.0m, test_set)
+pred_9.0m <- predict(fish_temp_9.0m, test_set)
+
+postResample(pred = pred_2.0m, obs = test_set$num_of_species)
+postResample(pred = pred_9.0m, obs = test_set$num_of_species)
+```
+
+As expected, results are very similar.
+
+
+We can assess this visually to confirm our results.
+```{r}
+# water temp at 2.0m
+test_set %>% 
+    ggplot(aes(avg_water_temp_2.0m_flat_site, num_of_species)) + 
+    geom_point() +
+    geom_abline(intercept=fish_temp_2.0m$coefficients[1], slope=fish_temp_2.0m$coefficients[2], col="red")
+
+# water temp at 9.0m
+test_set %>% 
+    ggplot(aes(avg_water_temp_9.0m_slope_site, num_of_species)) + 
+    geom_point() +
+    geom_abline(intercept=fish_temp_9.0m$coefficients[1], slope=fish_temp_9.0m$coefficients[2], col="blue")
+```
+
+
+They both perform very similarly, and choosing either water temperature as our predictor will yield similar results.
+
+\
+\
+
+
+## 2.2 Classification of sea grass species in the Great Barrier Reef from 1999 - 2003
+Continuing on from sea life diversity, we have data on presence or absence of certain seagrass species in the Great Barrier Reef from 1999 to 2003. Let's try to build a classifier to determine how location, and types of sediment and seabed may predict presence of certain sea grass.
+
+As written in the data wrangling and cleaning RMarkdown/HTML file, we chose 4 species to classify: Cymodocea Serrulata, Syringodium Isoetifolium, Thalassia Hemprichii, and Zostera Muelleri (subspecies Capricorni).
+
+### 2.2.1 Exploratory data analysis and visualization
+```{r, warning=FALSE}
+seagrass <- read.csv("cleaned_data/seagrass_classification_data.csv", as.is =TRUE)
+
+seagrass$SPECIES <- as.factor(seagrass$SPECIES)
+seagrass$SEDIMENT <- as.factor(seagrass$SEDIMENT)
+seagrass$TIDAL <- as.factor(seagrass$TIDAL)
+
+head(seagrass)
+
+summary(seagrass)
+```
+
+First we plot sea grass according to location (latitude and longitude). Then we will add a third axis (depth) to visualize this in 3-dimensions using `plotly` package. Since depth is measured in meters below sea level, we visualize this in negative values.
+```{r}
+seagrass %>%  ggplot() + geom_point(aes(x=LATITUDE, y=LONGITUDE, color=SPECIES))
+
+plot_ly(seagrass, x=~LATITUDE, y=~LONGITUDE, z=~-DEPTH, color=~SPECIES, type="scatter3d", mode="markers")
+```
+
+We can also see how our categorical predictors relate to sea grass species.
+
+```{r}
+seagrass %>% 
+    ggplot(aes(SEDIMENT, fill=SPECIES)) + geom_bar(width=.5, position = "dodge")
+
+seagrass %>% 
+    ggplot(aes(TIDAL, fill=SPECIES)) + geom_bar(width=.5, position = "dodge")
+```
+
+
+
+### 2.2.2 Random forest
+We will first use random forest to build a classifier and then use a multinomial logistic regression model, and compare the two.
+
+Let's first partition our data set into train and test sets. Since we have a lot more data here than in the linear regression model, we will partition it by 75%-25%.
+
+```{r}
+# test-train split
+seagrass_train_ind <- createDataPartition(y = seagrass$SPECIES, p=0.75, list=FALSE)
+
+train_set <- seagrass[seagrass_train_ind, ]
+test_set <- seagrass[-seagrass_train_ind, ]
+```
+
+
+```{r}
+rf_fit <- randomForest(SPECIES ~ LATITUDE + LONGITUDE + DEPTH + SEDIMENT + TIDAL, 
+                       data=train_set,
+                       mtry = 2)
+rf_fit
+```
+
+
+```{r}
+rf_pred <- predict(rf_fit, newdata = test_set, type = "response")
+confusionMatrix(table(pred = rf_pred, true = test_set$SPECIES))
+```
+
+We see that our classification model works quite well, especially for T_HEMPRICH and Z_CAPRICOR, which have 85%+ sensitivity and specificity. However, we got quite a low sensitivity for S_ISOETIFO. Recall to our data wrangling portion that S_ISOETIFO had only about 100 "Yes" observations. Since we had a small sample size for S_ISOETIFO relative to the other 3 seagrass species, this may have contributed to the low sensitivity.
+
+We can visually assess our predicted values with true values of species to see how our model performed.
+```{r}
+# true values
+plot_ly(test_set, x=~LATITUDE, y=~LONGITUDE, z=~-DEPTH, color=~SPECIES, type="scatter3d", mode="markers")
+
+# predicted values
+plot_ly(test_set, x=~LATITUDE, y=~LONGITUDE, z=~-DEPTH, color=~rf_pred, type="scatter3d", mode="markers")
+```
+
+For sediment type:
+
+```{r}
+test_set %>% 
+    ggplot(aes(SEDIMENT, fill=SPECIES)) + geom_bar(width=.5, position = "dodge")
+
+test_set %>% 
+    ggplot(aes(SEDIMENT, fill=rf_pred)) + geom_bar(width=.5, position = "dodge")
+```
+
+
+For seabed type:
+```{r}
+test_set %>% 
+    ggplot(aes(TIDAL, fill=SPECIES)) + geom_bar(width=.5, position = "dodge")
+
+test_set %>% 
+    ggplot(aes(TIDAL, fill=rf_pred)) + geom_bar(width=.5, position = "dodge")
+```
+
+
+Let's examine variable importance.
+
+```{r}
+variable_importance <- importance(rf_fit)
+tmp <- data_frame(feature = rownames(variable_importance),
+                  Gini = variable_importance[,1]) %>%
+                  arrange(desc(Gini))
+
+tmp
+```
+
+We see that longitude and latitude were very predictive of presence of seagrass followed by depth from sea level. The types of sediment and seabed (intertidal or subtidal seabed) are not very good predictors. Thus, it seems that the location of where the sea grass was discovered matters more than the various ocean floor properties.
+
+
+```{r}
+tmp %>% ggplot(aes(x=reorder(feature, Gini), y=Gini)) + 
+  geom_bar(stat='identity') +
+  coord_flip() + xlab("Feature") +
+  theme(axis.text=element_text(size=8))
+```
+
+
+### 2.2.3 Multinomial logistic regression
+
+We can now try a multinomial logistic regression model to see how it compares to random forest. We will use the `nnet` package.
+
+The logistic regression model is as follows:
+```{r}
+multinom_fit <- multinom(SPECIES ~ LATITUDE + LONGITUDE + DEPTH + SEDIMENT, data=train_set)
+
+summary(multinom_fit)
+```
+
+Relative risk ratios where reference group is C_SERRULAT
+```{r}
+exp(coef(multinom_fit))
+```
+
+```{r}
+# predicted probabilities
+predicted_prob <- predict(multinom_fit, newdata=test_set, type="probs")
+
+# predicted classes
+predicted_class <- predict(multinom_fit, newdata=test_set, type="class")
+
+confusionMatrix(data = predicted_class, reference = test_set$SPECIES )
+```
+
+
+We see that our multinomial logistic model has about 91% overall accuracy, which performs a bit worse than random forest. However, the model performs very badly in predicting for `S_ISOETIFO`.
+
+The model seems to predict T_HEMPRICH the best with 88.7% sensitivity and 98.8% specificity. The model also does not perform well for sensitivity of C_SERRULAT, with only about 41.7% sensitivity.
+
+Again, we can assess our results visually:
+
+```{r}
+# true values
+plot_ly(test_set, x=~LATITUDE, y=~LONGITUDE, z=~-DEPTH, color=~SPECIES, type="scatter3d", mode="markers")
+
+# predicted values
+plot_ly(test_set, x=~LATITUDE, y=~LONGITUDE, z=~-DEPTH, color=~predicted_class, type="scatter3d", mode="markers")
+```
+
+
+For sediment type:
+
+```{r}
+test_set %>% 
+    ggplot(aes(SEDIMENT, fill=SPECIES)) + geom_bar(width=.5, position = "dodge")
+
+test_set %>% 
+    ggplot(aes(SEDIMENT, fill=predicted_class)) + geom_bar(width=.5, position = "dodge")
+```
+
+
+For seabed type:
+```{r}
+test_set %>% 
+    ggplot(aes(TIDAL, fill=SPECIES)) + geom_bar(width=.5, position = "dodge")
+
+test_set %>% 
+    ggplot(aes(TIDAL, fill=predicted_class)) + geom_bar(width=.5, position = "dodge")
+```
+
+
+We can confirm in our visualizations that the logistic regression model failed to predict for `S_ISOETIFO`.
+
+
+So, we see that the overall accuracy for multinomial logistic regression model vs random forest model was 95.6% and 90.9%, respectively. However, the overall accuracy stated for the logistic regression model is deceiving since it did not perform well in sensitivity in 2 out of 4 classes.
+
+

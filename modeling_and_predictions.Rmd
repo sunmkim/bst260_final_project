@@ -23,10 +23,10 @@ library(randomForest)
 # Statistical modeling and prediction
 
 ## 1. Effect of sea water temperature on fish in the Great Barrier Reef
-### 1.1 Data exploratory analysis and visualization
+### 1.1 Exploratory data analysis and visualization
 In this analysis, we will examine the effects of water temperature on the number of unique fish species observed in the Great Barrier Reef from 1997 to 2011.
 
-Originally, we wanted to examine a relationship between water temperature and coral cover. However, we quickly saw that, when visualized, there does not seem to be a linear relation and we did not want to fit a misspecified model.
+Originally, we wanted to examine a relationship between water temperature and coral cover. However, we quickly saw that, when visualized, there does not seem to be a linear relation and we did not want to fit a mis-specified model.
 
 
 Merge between temperature and coral cover data sets
@@ -48,7 +48,9 @@ temp_coral_cover %>%
 ```
 
 
-So, we will examine a relationship between water temperature and the number of unique species observed in the Great Barrier Reef. First, we can do some basic visualization by plotting the relationship between water temperatures at 2m and 9m with number of unique fish species observed.
+As we can see, there is no linear relationship. While there are 2 or 3 clusters of coral cover percentage values, they seem to be pretty consistent across the range of water temperatures at 2.0m and 9.0 below sea level.
+
+We also suspect that increase in water temperature could also affect diversity in sea life. So, we will examine the relationship between water temperature and the number of unique species of fish observed in the Great Barrier Ree. First, we can do some basic visualization by plotting the relationship between water temperatures at depth 2.0m and 9.0m with the number of unique fish species observedin the Great Barrier Reef.
 ```{r}
 fish <- read_csv("cleaned_data/fish_species_counts.csv")
 fish_temp <- merge(x=temp, y=fish, by="date")
@@ -61,11 +63,11 @@ fish_temp %>% ggplot(aes(avg_water_temp_9.0m_slope_site, num_of_species)) + geom
 ```
 
 
-There seems to be a bit of negative linear relationship going on, so we will fit a linear model examining the number of unique species discovered in the Great Barrier Reef in relation to rising temperature.
+There seems to be a bit of negative linear relationship going on, so we will fit a linear model examining the number of unique species discovered in relation to rising temperature.
 
 ### 1.2 Linear regression
 
-Now, we can split our data set into train and test sets, using 0.6 to partition our data. Our outcome is the mean coral cover percentage.
+Now, we can split our data set into train and test sets, using 0.6 to partition our data. Our outcome is the mean coral cover percentage and water temperature is our covariate. We will fit 2 linear regression models: one examining effect of water temperature at 2.0m and the other examining the effect of temperature at 9.0m.
 
 ```{r}
 train_index <- createDataPartition(y=fish_temp$num_of_species, times=1, p = 0.6, list=FALSE)
@@ -74,7 +76,7 @@ train_set <- fish_temp[train_index, ]
 test_set <- fish_temp[-train_index, ]
 ```
 
-First, we will fit two models using each temperature at different depths as a single covariate, and then we will use both predictors to create a multiple linear regression model using both water temperatures as our covariates.
+Fit linear regression model:
 ```{r}
 fish_temp_2.0m <- lm(num_of_species ~ avg_water_temp_2.0m_flat_site, data=train_set)
 summary(fish_temp_2.0m)
@@ -83,13 +85,9 @@ fish_temp_9.0m <- lm(num_of_species ~ avg_water_temp_9.0m_slope_site, data=train
 summary(fish_temp_9.0m)
 ```
 
-Using both temperatures as our covariates
-```{r}
-fish_temp <- lm(num_of_species ~ avg_water_temp_2.0m_flat_site + avg_water_temp_9.0m_slope_site, data=train_set)
-summary(fish_temp)
-```
+We see that the models are very similar in results. The coefficient with covariate 2.0m water temperature and 9.0 water temperature is -2.56 and -2.61, respectively.
 
-Interestingly, using both water temperatures does not result in a regression model where the covariates are statistically significant predictors, as seen in the p-values of 0.731 and 0.413. So, we will compare between the two simple linear models to assess which water temperature depth is a better predictor of unique fish species observed in the Great Barrier Reef. Let's make predictions on our test data and assess model performance between the two models using 2.0m temperature vs 9.0m temperature.
+Although we should not expect a major difference between how each of the two models performs, let's compare them anyways to assess which water temperature depth is a better predictor of unique fish species observed in the Great Barrier Reef. 
 
 ```{r}
 pred_2.0m <- predict(fish_temp_2.0m, test_set)
@@ -98,6 +96,9 @@ pred_9.0m <- predict(fish_temp_9.0m, test_set)
 postResample(pred = pred_2.0m, obs = test_set$num_of_species)
 postResample(pred = pred_9.0m, obs = test_set$num_of_species)
 ```
+
+As expected, results are very similar.
+
 
 We can assess this visually to confirm our results.
 ```{r}
@@ -120,7 +121,12 @@ They both perform very similarly, and choosing either water temperature as our p
 \
 \
 
-## 2. Binary classification on predicting presence of Halophila Ovalis in the Great Barrier Reef from 1999 - 2003.
+## 2. Classification of sea grass species in the Great Barrier Reef from 1999 - 2003.
+
+Continuing on from sea life diversity, we have data on presence or absence of certain seagrass species in the Great Barrier Reef from 1999 to 2003. Let's try to build a classifier to determine how location, and types of sediment and seabed may predict presence of certain sea grass.
+
+As written in the data wrangling and cleaning RMarkdown/HTML file, we chose 4 species to classify: Cymodocea Serrulata, Syringodium Isoetifolium, Thalassia Hemprichii, and Zostera Muelleri (subspecies Capricorni).
+
 ## 2.1 Data exploratory analysis and visualization
 
 ```{r, warning=FALSE}
@@ -135,14 +141,21 @@ head(seagrass)
 summary(seagrass)
 ```
 
-Data visualization
+First we plot sea grass according to location (latitude and longitude). Then we will add a third axis (depth) to visualize this in 3-dimensions using `plotly` package. Since depth is measured in meters below sea level, we visualize this in negative values.
 ```{r}
 seagrass %>%  ggplot() + geom_point(aes(x=LATITUDE, y=LONGITUDE, color=SPECIES))
 
+plot_ly(seagrass, x=~LATITUDE, y=~LONGITUDE, z=~-DEPTH, color=~SPECIES, type="scatter3d", mode="markers")
+```
+
+We can also see how our categorical predictors relate to sea grass species.
+
+```{r}
 seagrass %>% 
     ggplot(aes(SEDIMENT, fill=SPECIES)) + geom_bar(width=.5, position = "dodge")
 
-plot_ly(seagrass, x=~LATITUDE, y=~LONGITUDE, z=~-DEPTH, color=~SPECIES, type="scatter3d", mode="markers")
+seagrass %>% 
+    ggplot(aes(TIDAL, fill=SPECIES)) + geom_bar(width=.5, position = "dodge")
 ```
 
 
@@ -151,7 +164,10 @@ plot_ly(seagrass, x=~LATITUDE, y=~LONGITUDE, z=~-DEPTH, color=~SPECIES, type="sc
 
 
 ## 2.2 Random forest
-First, we partition our data set into train and test sets. Since we have a lot more data here than in the linear regression model, we will partition it by 75%-25%.
+
+We will first use random forest to build a classifier and then use a multinomial logistic regression model, and compare the two.
+
+Let's first partition our data set into train and test sets. Since we have a lot more data here than in the linear regression model, we will partition it by 75%-25%.
 
 ```{r}
 # test-train split
@@ -175,17 +191,39 @@ rf_pred <- predict(rf_fit, newdata = test_set, type = "response")
 confusionMatrix(table(pred = rf_pred, true = test_set$SPECIES))
 ```
 
-We see that our classification model works quite well, especially for T_HEMPRICH and Z_CAPRICOR. However, we got quite a low sensitity for S_ISOETIFO. Recall to our data wrangling portion that S_ISOETIFO had only about 100 "Yes" observations. Since we had a small sample size for S_ISOETIFO relative to the other 3 seagrass species, this may have contributed to the low sensitivity.
+We see that our classification model works quite well, especially for T_HEMPRICH and Z_CAPRICOR, which have 85%+ sensitivity and specificity. However, we got quite a low sensitivity for S_ISOETIFO. Recall to our data wrangling portion that S_ISOETIFO had only about 100 "Yes" observations. Since we had a small sample size for S_ISOETIFO relative to the other 3 seagrass species, this may have contributed to the low sensitivity.
 
-Visualization
+We can visually assess our predicted values with true values of species to see how our model performed.
 ```{r}
 # true values
 plot_ly(test_set, x=~LATITUDE, y=~LONGITUDE, z=~-DEPTH, color=~SPECIES, type="scatter3d", mode="markers")
 
-# predicetd values
+# predicted values
 plot_ly(test_set, x=~LATITUDE, y=~LONGITUDE, z=~-DEPTH, color=~rf_pred, type="scatter3d", mode="markers")
 ```
 
+For sediment type:
+
+```{r}
+test_set %>% 
+    ggplot(aes(SEDIMENT, fill=SPECIES)) + geom_bar(width=.5, position = "dodge")
+
+test_set %>% 
+    ggplot(aes(SEDIMENT, fill=rf_pred)) + geom_bar(width=.5, position = "dodge")
+```
+
+
+For seabed type:
+```{r}
+test_set %>% 
+    ggplot(aes(TIDAL, fill=SPECIES)) + geom_bar(width=.5, position = "dodge")
+
+test_set %>% 
+    ggplot(aes(TIDAL, fill=rf_pred)) + geom_bar(width=.5, position = "dodge")
+```
+
+
+Let's examine variable importance.
 
 ```{r}
 variable_importance <- importance(rf_fit)
@@ -196,7 +234,7 @@ tmp <- data_frame(feature = rownames(variable_importance),
 tmp
 ```
 
-We see that longitude and latitude were very predictive of presence of seagrass followed by depth from sea level. The types of sediment and seabed (intertidal or subtidal seabed) are not very good predictors. Thus, it seems that the location of where the seagrass was discovered matters more than the various ocean floor properties.
+We see that longitude and latitude were very predictive of presence of seagrass followed by depth from sea level. The types of sediment and seabed (intertidal or subtidal seabed) are not very good predictors. Thus, it seems that the location of where the sea grass was discovered matters more than the various ocean floor properties.
 
 
 ```{r}
@@ -212,12 +250,10 @@ tmp %>% ggplot(aes(x=reorder(feature, Gini), y=Gini)) +
 
 ## 2.3 Multinomial logistic regression
 
-We can try a multinomial logistic regression model to see how it compares to our random forest model. 
+We can now try a multinomial logistic regression model to see how it compares to random forest. We will use the `nnet` package.
 
 The logistic regression model is as follows:
 ```{r}
-library(nnet)
-
 multinom_fit <- multinom(SPECIES ~ LATITUDE + LONGITUDE + DEPTH + SEDIMENT, data=train_set)
 
 summary(multinom_fit)
@@ -239,59 +275,44 @@ confusionMatrix(data = predicted_class, reference = test_set$SPECIES )
 ```
 
 
-We see that our multinomial logistic model has about 91% overall accuracy, which performs a bit worse than random forest. However, the model does a very bad job in predicting `S_ISOETIFO`.
+We see that our multinomial logistic model has about 91% overall accuracy, which performs a bit worse than random forest. However, the model performs very badly in predicting for `S_ISOETIFO`.
 
 The model seems to predict T_HEMPRICH the best with 88.7% sensitivity and 98.8% specificity. The model also does not perform well for sensitivity of C_SERRULAT, with only about 41.7% sensitivity.
 
+Again, we can assess our results visually:
+
 ```{r}
-density_plot_long_true <- ggplot(test_set, aes(x=LONGITUDE, fill=SPECIES)) + 
-  geom_density(alpha=0.7)
+# true values
+plot_ly(test_set, x=~LATITUDE, y=~LONGITUDE, z=~-DEPTH, color=~SPECIES, type="scatter3d", mode="markers")
 
-density_plot_long_true
-
-
-density_plot_long_pred <- ggplot(test_set, aes(x=LONGITUDE, fill=predicted_class)) + 
-  geom_density(alpha=0.7)
-
-density_plot_long_pred
+# predicted values
+plot_ly(test_set, x=~LATITUDE, y=~LONGITUDE, z=~-DEPTH, color=~predicted_class, type="scatter3d", mode="markers")
 ```
 
 
-
+For sediment type:
 
 ```{r}
-density_plot_lat_true <- ggplot(test_set, aes(x=LATITUDE, fill=SPECIES)) + 
-  geom_density(alpha=0.7)
+test_set %>% 
+    ggplot(aes(SEDIMENT, fill=SPECIES)) + geom_bar(width=.5, position = "dodge")
 
-density_plot_lat_true
-
-
-density_plot_lat_pred <- ggplot(test_set, aes(x=LATITUDE, fill=predicted_class)) + 
-  geom_density(alpha=0.7)
-
-density_plot_lat_pred
+test_set %>% 
+    ggplot(aes(SEDIMENT, fill=predicted_class)) + geom_bar(width=.5, position = "dodge")
 ```
 
 
-
+For seabed type:
 ```{r}
-density_plot_depth_true <- ggplot(test_set, aes(x=DEPTH, fill=SPECIES)) + 
-  geom_density(alpha=0.7)
+test_set %>% 
+    ggplot(aes(TIDAL, fill=SPECIES)) + geom_bar(width=.5, position = "dodge")
 
-density_plot_depth_true
-
-
-density_plot_depth_pred <- ggplot(test_set, aes(x=DEPTH, fill=predicted_class)) + 
-  geom_density(alpha=0.7)
-
-density_plot_depth_pred
+test_set %>% 
+    ggplot(aes(TIDAL, fill=predicted_class)) + geom_bar(width=.5, position = "dodge")
 ```
 
 
+We can confirm in our visualizations that the logistic regression model failed to predict for `S_ISOETIFO`.
 
 
-
-
-
-So, we see that the overall accuracy for multinomial logistic regression model vs random forest model was 73.5% and 91.7%, respectively.
+So, we see that the overall accuracy for multinomial logistic regression model vs random forest model was 95.6% and 90.9%, respectively. However, the overall accuracy stated for the logistic regression model is deceiving since it did not perform well in sensitivity in 2 out of 4 classes.
 
